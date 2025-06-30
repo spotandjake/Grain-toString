@@ -3,7 +3,55 @@ module ToStringTest
 from "./toString.gr" include ToString
 use ToString.{ toString }
 
-// TODO: Heap values
+// Heap values
+// TODO: Tuple
+// TODO: Array
+// TODO: Record
+// TODO: ADT
+// TODO: Lambda
+assert toString(() => void) == "<lambda>" // Lambda
+assert toString((a, b, c) => void) == "<lambda>" // Lambda
+
+// TODO: String
+assert toString(b"test") == "<bytes: 74 65 73 74>" // Bytes
+assert toString(
+  b"123456789123456789123456789123456789123456789123456789123456789123456789123456789123456789123456789"
+)
+  == "<bytes: 31 32 33 34 35 36 37 38 39 31 32 33 34 35 36 37 38 39 31 32 33 34 35 36 37 38 39 31 32 33 34 35...>" // Bytes
+assert toString(-9_000_000_000_000_000_000L) == "-9000000000000000000" // Boxed Number - Int64
+assert toString(-32L) == "-32" // Boxed Number - Int64
+assert toString(0L) == "0" // Boxed Number - Int64
+assert toString(32L) == "32" // Boxed Number - Int64
+assert toString(9_000_000_000_000_000_000L) == "9000000000000000000" // Boxed Number - Int64
+assert toString(-32.5d) == "-32.5" // Boxed Number - Float64
+assert toString(-32.0d) == "-32.0" // Boxed Number - Float64
+assert toString(-0.0d) == "0.0" // Boxed Number - Float64
+assert toString(0.0d) == "0.0" // Boxed Number - Float64
+assert toString(32.0d) == "32.0" // Boxed Number - Float64
+assert toString(32.5d) == "32.5" // Boxed Number - Float64
+assert toString(-NaNd) == "NaN" // Boxed Number - Float64
+assert toString(NaNd) == "NaN" // Boxed Number - Float64
+assert toString(-Infinityd) == "-Infinity" // Boxed Number - Float64
+assert toString(Infinityd) == "Infinity" // Boxed Number - Float64
+// TODO: Rational
+// TODO: BigInt
+assert toString(-32l) == "-32" // Int32
+assert toString(0l) == "0" // Int32
+assert toString(32l) == "32" // Int32
+assert toString(-32.5f) == "-32.5" // Float32
+assert toString(-32.0f) == "-32.0" // Float32
+assert toString(-0.0f) == "0.0" // Float32
+assert toString(0.0f) == "0.0" // Float32
+assert toString(32.0f) == "32.0" // Float32
+assert toString(32.5f) == "32.5" // Float32
+assert toString(-NaNf) == "NaN" // Float32
+assert toString(NaNf) == "NaN" // Float32
+assert toString(-Infinityf) == "-Infinity" // Float32
+assert toString(Infinityf) == "Infinity" // Float32
+assert toString(0ul) == "0" // Uint32
+assert toString(32ul) == "32" // Uint32
+assert toString(0uL) == "0" // Uint64
+assert toString(32uL) == "32" // Uint64
 // Short Values
 assert toString('a') == "a" // Char
 assert toString('\t') == "\t" // Char
@@ -26,5 +74,19 @@ assert toString(false) == "false"
 assert toString(-32) == "-32" // Simple Number
 assert toString(0) == "0" // Simple Number
 assert toString(32) == "32" // Simple Number
-// TODO: Complex Heap Values -- nested, recursive, mixed, nested escaping '\'', '\t', etc...
+assert toString(-9_000_000_000_000_000_000) == "-9000000000000000000" // Int64
+assert toString(9_000_000_000_000_000_000) == "9000000000000000000" // Int64
+assert toString(-32.5) == "-32.5" // Float64
+assert toString(-32.0) == "-32.0" // Float64
+assert toString(-0.0) == "0.0" // Float64
+assert toString(0.0) == "0.0" // Float64
+assert toString(32.0) == "32.0" // Float64
+assert toString(32.5) == "32.5" // Float64
+assert toString(-NaN) == "NaN" // Float64
+assert toString(NaN) == "NaN" // Float64
+assert toString(-Infinity) == "-Infinity" // Float64
+assert toString(Infinity) == "Infinity" // Float64
+// TODO: Rational
+// TODO: BigInt
+// TODO: Complex Heap Values -- nested, recursive, mixed, nested escaping char, string, '\'', '\t', etc...
 // TODO: Builtins -- list, range, Option, Result

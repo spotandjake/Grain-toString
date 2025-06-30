@@ -1,6 +1,10 @@
 module ToString
 
 from "runtime/unsafe/wasmi32" include WasmI32
+from "runtime/unsafe/wasmi64" include WasmI64
+from "runtime/unsafe/wasmf32" include WasmF32
+from "runtime/unsafe/wasmf64" include WasmF64
+from "runtime/unsafe/memory" include Memory
 from "runtime/numberUtils" include NumberUtils
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
@@ -20,7 +24,11 @@ from "./grainValue.gr" include GrainValue
 from "./doc.gr" include Doc
 
 // Specific stringification functions for various data types
+// TODO: I'm not sure we want these in a submodule, I like the extra organization for now.
 module Stringify {
+  // Settings
+  @unsafe
+  let defaultRadix = 10n // The default radix for numbers
   // TODO: Maybe play around with experimental color and indentation setting support????
   abstract record StringifyState<a> {
     topLevel: Bool,
@@ -30,23 +38,82 @@ module Stringify {
 
   // Heap Values
   provide let string = (value: String) => Doc.string(value) // TODO: Escaping???
-  // TODO: Implement these
-  provide let bytes = (value: Bytes) => Doc.string("NIY: Bytes")
+  @unsafe
+  provide let bytes = (value: Bytes) => {
+    // TODO: Is there a slightly safer way of doing this?
+    use Doc.{ (++) }
+    use WasmI32.{ (+), (-), (*), (<), (>), (==) }
+    let ptr = WasmI32.fromGrain(value)
+    let len = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+    let len = if (len > 32n) 32n else len // Limit to 32 bytes for display
+
+    let hex = NumberUtils.get_HEX_DIGITS()
+    let strLen = len * 3n - 1n // 2 hex digits + 1 space per byte
+    let str = allocateString(strLen)
+    let bytesOffset = ptr + 8n // TODO: Magic Offset
+    let strOffset = str + 8n // TODO: Magic Offset
+    Memory.fill(strOffset, 0x20n, strLen) // Fill with spaces
+    for (let mut i = 0n; i < len; i += 1n) {
+      let n = WasmI32.load8U(bytesOffset, i)
+      let j = i * 3n
+      let k = n * 2n
+      WasmI32.store16(strOffset, WasmI32.load16U(hex, k), j)
+    }
+    let content = Doc.string(WasmI32.toGrain(str): String)
+    ignore(value)
+    let content = if (len < 32n) content else content ++ Doc.string("...")
+    Doc.angleBrackets(Doc.string("bytes: ") ++ content)
+  }
   @unsafe
   provide let number = (value: Number) => {
     match (GrainValue.getNumberTag(value)) {
       GrainValue.SimpleNumberTag(v) =>
-        Doc.string(NumberUtils.itoa32(untagSimpleNumber(v), 10n)),
-      GrainValue.Int64Tag(v) => Doc.string("NIY: Int64"),
-      GrainValue.Float64Tag(v) => Doc.string("NIY: Float64"),
+        Doc.string(NumberUtils.itoa32(untagSimpleNumber(v), defaultRadix)),
+      GrainValue.Int64Tag(v) => {
+        let ptr = WasmI32.fromGrain(v)
+        let num = WasmI64.load(ptr, 8n) // TODO: Magic Offset
+        ignore(v)
+        Doc.string(NumberUtils.itoa64(num, defaultRadix))
+      },
+      GrainValue.Float64Tag(v) => {
+        let ptr = WasmI32.fromGrain(v)
+        let num = WasmF64.load(ptr, 8n) // TODO: Magic Offset
+        ignore(v)
+        Doc.string(NumberUtils.dtoa(num))
+      },
+      // TODO: Implement these
       GrainValue.RationalTag(v) => Doc.string("NIY: Rational"),
       GrainValue.BigIntTag(v) => Doc.string("NIY: BigInt"),
     }
   }
-  provide let int32 = (value: Int32) => Doc.string("NIY: Int32")
-  provide let float32 = (value: Float32) => Doc.string("NIY: Float32")
-  provide let uint32 = (value: Uint32) => Doc.string("NIY: Uint32")
-  provide let uint64 = (value: Uint64) => Doc.string("NIY: Uint64")
+  @unsafe
+  provide let int32 = (value: Int32) => {
+    let ptr = WasmI32.fromGrain(value)
+    let num = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+    ignore(value)
+    Doc.string(NumberUtils.itoa32(num, defaultRadix))
+  }
+  @unsafe
+  provide let float32 = (value: Float32) => {
+    let ptr = WasmI32.fromGrain(value)
+    let num = WasmF64.promoteF32(WasmF32.load(ptr, 4n)) // TODO: Magic Offset
+    ignore(value)
+    Doc.string(NumberUtils.dtoa(num))
+  }
+  @unsafe
+  provide let uint32 = (value: Uint32) => {
+    let ptr = WasmI32.fromGrain(value)
+    let num = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+    ignore(value)
+    Doc.string(NumberUtils.utoa32(num, defaultRadix))
+  }
+  @unsafe
+  provide let uint64 = (value: Uint64) => {
+    let ptr = WasmI32.fromGrain(value)
+    let num = WasmI64.load(ptr, 8n) // TODO: Magic Offset
+    ignore(value)
+    Doc.string(NumberUtils.utoa64(num, defaultRadix))
+  }
   // Short Values
   @unsafe
   provide let char = (value: Char, state) => {
@@ -66,7 +133,7 @@ module Stringify {
         let usv = untagChar(value)
         let byteCount = usvEncodeLength(usv)
         let string = allocateString(byteCount)
-        writeUtf8CodePoint(string + 8n, usv)
+        writeUtf8CodePoint(string + 8n, usv) // TODO: Magic Offset
         WasmI32.toGrain(string): String
       },
     }
@@ -78,16 +145,16 @@ module Stringify {
   }
   @unsafe
   provide let int8 = (value: Int8) =>
-    Doc.string(NumberUtils.itoa32(untagInt8(value), 10n))
+    Doc.string(NumberUtils.itoa32(untagInt8(value), defaultRadix))
   @unsafe
   provide let int16 = (value: Int16) =>
-    Doc.string(NumberUtils.itoa32(untagInt16(value), 10n))
+    Doc.string(NumberUtils.itoa32(untagInt16(value), defaultRadix))
   @unsafe
   provide let uint8 = (value: Uint8) =>
-    Doc.string(NumberUtils.itoa32(untagUint8(value), 10n))
+    Doc.string(NumberUtils.itoa32(untagUint8(value), defaultRadix))
   @unsafe
   provide let uint16 = (value: Uint16) =>
-    Doc.string(NumberUtils.itoa32(untagUint16(value), 10n))
+    Doc.string(NumberUtils.itoa32(untagUint16(value), defaultRadix))
   // Constant Values
 
   // Polymorphic conversions
@@ -117,8 +184,8 @@ module Stringify {
     // Get The Heap Tag
     match (GrainValue.getHeapTag(value)) {
       // TODO: More complex possibly recursive values
-      TupleTag(_) | ArrayTag(_) | RecordTag(_) | ADTTag(_) | ClosureTag(_) =>
-        fail "NIY",
+      TupleTag(_) | ArrayTag(_) | RecordTag(_) | ADTTag(_) => fail "NIY",
+      ClosureTag(_) => Doc.string("<lambda>"),
       StringTag(v) => string(v),
       BytesTag(v) => bytes(v),
       // Boxed Number Types
@@ -145,5 +212,3 @@ module Stringify {
 
 provide let toString = (value: a) =>
   Doc.Engine.toString(LF, 80, Stringify.value(value, Stringify.emptyState))
-
-print(toString(32))
