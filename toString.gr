@@ -37,13 +37,13 @@ module Stringify {
   provide let emptyState = { topLevel: true, cycleStack: [] }
 
   // Heap Values
-  provide let string = (value: String) => Doc.string(value) // TODO: Escaping???
+  provide let string = (val: String) => Doc.string(val) // TODO: Escaping???
   @unsafe
-  provide let bytes = (value: Bytes) => {
+  provide let bytes = (val: Bytes) => {
     // TODO: Is there a slightly safer way of doing this?
     use Doc.{ (++) }
     use WasmI32.{ (+), (-), (*), (<), (>), (==) }
-    let ptr = WasmI32.fromGrain(value)
+    let ptr = WasmI32.fromGrain(val)
     let len = WasmI32.load(ptr, 4n) // TODO: Magic Offset
     let len = if (len > 32n) 32n else len // Limit to 32 bytes for display
 
@@ -60,13 +60,13 @@ module Stringify {
       WasmI32.store16(strOffset, WasmI32.load16U(hex, k), j)
     }
     let content = Doc.string(WasmI32.toGrain(str): String)
-    ignore(value)
+    ignore(val)
     let content = if (len < 32n) content else content ++ Doc.string("...")
     Doc.angleBrackets(Doc.string("bytes: ") ++ content)
   }
   @unsafe
-  provide let number = (value: Number) => {
-    match (GrainValue.getNumberTag(value)) {
+  provide let number = (val: Number) => {
+    match (GrainValue.getNumberTag(val)) {
       GrainValue.SimpleNumberTag(v) =>
         Doc.string(NumberUtils.itoa32(untagSimpleNumber(v), defaultRadix)),
       GrainValue.Int64Tag(v) => {
@@ -87,39 +87,39 @@ module Stringify {
     }
   }
   @unsafe
-  provide let int32 = (value: Int32) => {
-    let ptr = WasmI32.fromGrain(value)
+  provide let int32 = (val: Int32) => {
+    let ptr = WasmI32.fromGrain(val)
     let num = WasmI32.load(ptr, 4n) // TODO: Magic Offset
-    ignore(value)
+    ignore(val)
     Doc.string(NumberUtils.itoa32(num, defaultRadix))
   }
   @unsafe
-  provide let float32 = (value: Float32) => {
-    let ptr = WasmI32.fromGrain(value)
+  provide let float32 = (val: Float32) => {
+    let ptr = WasmI32.fromGrain(val)
     let num = WasmF64.promoteF32(WasmF32.load(ptr, 4n)) // TODO: Magic Offset
-    ignore(value)
+    ignore(val)
     Doc.string(NumberUtils.dtoa(num))
   }
   @unsafe
-  provide let uint32 = (value: Uint32) => {
-    let ptr = WasmI32.fromGrain(value)
+  provide let uint32 = (val: Uint32) => {
+    let ptr = WasmI32.fromGrain(val)
     let num = WasmI32.load(ptr, 4n) // TODO: Magic Offset
-    ignore(value)
+    ignore(val)
     Doc.string(NumberUtils.utoa32(num, defaultRadix))
   }
   @unsafe
-  provide let uint64 = (value: Uint64) => {
-    let ptr = WasmI32.fromGrain(value)
+  provide let uint64 = (val: Uint64) => {
+    let ptr = WasmI32.fromGrain(val)
     let num = WasmI64.load(ptr, 8n) // TODO: Magic Offset
-    ignore(value)
+    ignore(val)
     Doc.string(NumberUtils.utoa64(num, defaultRadix))
   }
   // Short Values
   @unsafe
-  provide let char = (value: Char, state) => {
+  provide let char = (val: Char, state) => {
     use Doc.{ (++) }
     // TODO: It would be nice if we could share this logic with strings
-    let content = match (value) {
+    let content = match (val) {
       '\b' when !state.topLevel => "\\b",
       '\f' when !state.topLevel => "\\f",
       '\n' when !state.topLevel => "\\n",
@@ -130,7 +130,7 @@ module Stringify {
       '\'' when !state.topLevel => "\\'",
       _ => {
         use WasmI32.{ (+) }
-        let usv = untagChar(value)
+        let usv = untagChar(val)
         let byteCount = usvEncodeLength(usv)
         let string = allocateString(byteCount)
         writeUtf8CodePoint(string + 8n, usv) // TODO: Magic Offset
@@ -144,23 +144,23 @@ module Stringify {
     }
   }
   @unsafe
-  provide let int8 = (value: Int8) =>
-    Doc.string(NumberUtils.itoa32(untagInt8(value), defaultRadix))
+  provide let int8 = (val: Int8) =>
+    Doc.string(NumberUtils.itoa32(untagInt8(val), defaultRadix))
   @unsafe
-  provide let int16 = (value: Int16) =>
-    Doc.string(NumberUtils.itoa32(untagInt16(value), defaultRadix))
+  provide let int16 = (val: Int16) =>
+    Doc.string(NumberUtils.itoa32(untagInt16(val), defaultRadix))
   @unsafe
-  provide let uint8 = (value: Uint8) =>
-    Doc.string(NumberUtils.itoa32(untagUint8(value), defaultRadix))
+  provide let uint8 = (val: Uint8) =>
+    Doc.string(NumberUtils.itoa32(untagUint8(val), defaultRadix))
   @unsafe
-  provide let uint16 = (value: Uint16) =>
-    Doc.string(NumberUtils.itoa32(untagUint16(value), defaultRadix))
+  provide let uint16 = (val: Uint16) =>
+    Doc.string(NumberUtils.itoa32(untagUint16(val), defaultRadix))
   // Constant Values
 
   // Polymorphic conversions
-  let shortValueToString = (value: GrainValue.ShortValue<a>, state) => {
+  let shortValueToString = (val: GrainValue.ShortValue<a>, state) => {
     // Get The Short Tag
-    match (GrainValue.getShortTag(value)) {
+    match (GrainValue.getShortTag(val)) {
       CharTag(v) => char(v, state),
       Int8Tag(v) => int8(v),
       Int16Tag(v) => int16(v),
@@ -170,9 +170,9 @@ module Stringify {
   }
 
   @unsafe
-  let constantValueToString = (value: GrainValue.ConstantValue<a>) => {
+  let constantValueToString = (val: GrainValue.ConstantValue<a>) => {
     use WasmI32.{ (==) }
-    match (WasmI32.fromGrain(value)) {
+    match (WasmI32.fromGrain(val)) {
       v when v == WasmI32.fromGrain(true) => Doc.string("true"),
       v when v == WasmI32.fromGrain(false) => Doc.string("false"),
       v when v == WasmI32.fromGrain(void) => Doc.string("void"),
@@ -180,11 +180,15 @@ module Stringify {
     }
   }
 
-  let rec heapValueToString = (value: GrainValue.HeapValue<a>, state) => {
+  @unsafe
+  let rec heapValueToString = (val: GrainValue.HeapValue<b>, state) => {
+    // TODO: Handle Cycle
     // Get The Heap Tag
-    match (GrainValue.getHeapTag(value)) {
+    match (GrainValue.getHeapTag(val)) {
       // TODO: More complex possibly recursive values
-      TupleTag(_) | ArrayTag(_) | RecordTag(_) | ADTTag(_) => fail "NIY",
+      TupleTag(v) =>
+        tuple(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
+      ArrayTag(_) | RecordTag(_) | ADTTag(_) => fail "NIY",
       ClosureTag(_) => Doc.string("<lambda>"),
       StringTag(v) => string(v),
       BytesTag(v) => bytes(v),
@@ -197,8 +201,43 @@ module Stringify {
       Uint64Tag(v) => uint64(v),
     }
   }
-  and value = (value: a, state) => {
-    match (GrainValue.getTag(value)) {
+  and tuple = (val: GrainValue.TupleValue<a>, state) => {
+    let state = { ...state, topLevel: false }
+    use Doc.{ (++) }
+    use WasmI32.{ (+), (-), (*), (==), (>=) }
+    let ptr = WasmI32.fromGrain(val)
+    let len = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+    let mut vals = []
+    for (let mut i = len * 4n - 4n; i >= 0n; i -= 4n) { // TODO: Magic Offset
+      let fieldPtr = WasmI32.load(ptr + 8n, i) // TODO: Magic Offset
+      let fieldVal = WasmI32.toGrain(fieldPtr): a
+      vals = [value(fieldVal, state), ...vals]
+    }
+    ignore(val)
+    let content = Doc.parens(
+      Doc.indent(
+        Doc.concatMap(
+          lead=next => Doc._break,
+          sep=(prev, next) => Doc.breakableSpace,
+          trail=prev => Doc.empty,
+          f=(final, v) => if (final) {
+            Doc.group(v) ++ Doc.trailingComma
+          } else {
+            Doc.group(v ++ Doc.comma)
+          },
+          vals
+        )
+      )
+        ++ Doc._break
+    )
+    if (len == 1n) {
+      Doc.string("box") ++ content
+    } else {
+      content
+    }
+  }
+  and value = (val: a, state) => {
+    match (GrainValue.getTag(val)) {
       HeapTag(v) => heapValueToString(v, state),
       ShortTag(v) => shortValueToString(v, state),
       NumberTag(v) => number(v),
@@ -210,5 +249,5 @@ module Stringify {
   provide { value }
 }
 
-provide let toString = (value: a) =>
-  Doc.Engine.toString(LF, 80, Stringify.value(value, Stringify.emptyState))
+provide let toString = (val: a) =>
+  Doc.Engine.toString(LF, 80, Stringify.value(val, Stringify.emptyState))
