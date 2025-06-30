@@ -1,0 +1,149 @@
+module ToString
+
+from "runtime/unsafe/wasmi32" include WasmI32
+from "runtime/numberUtils" include NumberUtils
+from "runtime/dataStructures" include DataStructures
+use DataStructures.{
+  allocateString,
+  // Tagging
+  untagSimpleNumber,
+  // Short Values
+  untagChar,
+  untagInt8,
+  untagInt16,
+  untagUint8,
+  untagUint16,
+}
+from "runtime/utf8" include Utf8
+use Utf8.{ usvEncodeLength, writeUtf8CodePoint }
+from "./grainValue.gr" include GrainValue
+from "./doc.gr" include Doc
+
+// Specific stringification functions for various data types
+module Stringify {
+  // TODO: Maybe play around with experimental color and indentation setting support????
+  abstract record StringifyState<a> {
+    topLevel: Bool,
+    cycleStack: List<GrainValue.HeapValue<a>>,
+  }
+  provide let emptyState = { topLevel: true, cycleStack: [] }
+
+  // Heap Values
+  provide let string = (value: String) => Doc.string(value) // TODO: Escaping???
+  // TODO: Implement these
+  provide let bytes = (value: Bytes) => Doc.string("NIY: Bytes")
+  @unsafe
+  provide let number = (value: Number) => {
+    match (GrainValue.getNumberTag(value)) {
+      GrainValue.SimpleNumberTag(v) =>
+        Doc.string(NumberUtils.itoa32(untagSimpleNumber(v), 10n)),
+      GrainValue.Int64Tag(v) => Doc.string("NIY: Int64"),
+      GrainValue.Float64Tag(v) => Doc.string("NIY: Float64"),
+      GrainValue.RationalTag(v) => Doc.string("NIY: Rational"),
+      GrainValue.BigIntTag(v) => Doc.string("NIY: BigInt"),
+    }
+  }
+  provide let int32 = (value: Int32) => Doc.string("NIY: Int32")
+  provide let float32 = (value: Float32) => Doc.string("NIY: Float32")
+  provide let uint32 = (value: Uint32) => Doc.string("NIY: Uint32")
+  provide let uint64 = (value: Uint64) => Doc.string("NIY: Uint64")
+  // Short Values
+  @unsafe
+  provide let char = (value: Char, state) => {
+    use Doc.{ (++) }
+    // TODO: It would be nice if we could share this logic with strings
+    let content = match (value) {
+      '\b' when !state.topLevel => "\\b",
+      '\f' when !state.topLevel => "\\f",
+      '\n' when !state.topLevel => "\\n",
+      '\r' when !state.topLevel => "\\r",
+      '\t' when !state.topLevel => "\\t",
+      '\v' when !state.topLevel => "\\v",
+      '\\' when !state.topLevel => "\\\\",
+      '\'' when !state.topLevel => "\\'",
+      _ => {
+        use WasmI32.{ (+) }
+        let usv = untagChar(value)
+        let byteCount = usvEncodeLength(usv)
+        let string = allocateString(byteCount)
+        writeUtf8CodePoint(string + 8n, usv)
+        WasmI32.toGrain(string): String
+      },
+    }
+    if (state.topLevel) {
+      Doc.string(content)
+    } else {
+      Doc.singleQuotes(Doc.string(content))
+    }
+  }
+  @unsafe
+  provide let int8 = (value: Int8) =>
+    Doc.string(NumberUtils.itoa32(untagInt8(value), 10n))
+  @unsafe
+  provide let int16 = (value: Int16) =>
+    Doc.string(NumberUtils.itoa32(untagInt16(value), 10n))
+  @unsafe
+  provide let uint8 = (value: Uint8) =>
+    Doc.string(NumberUtils.itoa32(untagUint8(value), 10n))
+  @unsafe
+  provide let uint16 = (value: Uint16) =>
+    Doc.string(NumberUtils.itoa32(untagUint16(value), 10n))
+  // Constant Values
+
+  // Polymorphic conversions
+  let shortValueToString = (value: GrainValue.ShortValue<a>, state) => {
+    // Get The Short Tag
+    match (GrainValue.getShortTag(value)) {
+      CharTag(v) => char(v, state),
+      Int8Tag(v) => int8(v),
+      Int16Tag(v) => int16(v),
+      Uint8Tag(v) => uint8(v),
+      Uint16Tag(v) => uint16(v),
+    }
+  }
+
+  @unsafe
+  let constantValueToString = (value: GrainValue.ConstantValue<a>) => {
+    use WasmI32.{ (==) }
+    match (WasmI32.fromGrain(value)) {
+      v when v == WasmI32.fromGrain(true) => Doc.string("true"),
+      v when v == WasmI32.fromGrain(false) => Doc.string("false"),
+      v when v == WasmI32.fromGrain(void) => Doc.string("void"),
+      _ => Doc.string("<unknown small value>"),
+    }
+  }
+
+  let rec heapValueToString = (value: GrainValue.HeapValue<a>, state) => {
+    // Get The Heap Tag
+    match (GrainValue.getHeapTag(value)) {
+      // TODO: More complex possibly recursive values
+      TupleTag(_) | ArrayTag(_) | RecordTag(_) | ADTTag(_) | ClosureTag(_) =>
+        fail "NIY",
+      StringTag(v) => string(v),
+      BytesTag(v) => bytes(v),
+      // Boxed Number Types
+      BoxedNumberTag(v) => number(v),
+      // Generic Number Types
+      Int32Tag(v) => int32(v),
+      Float32Tag(v) => float32(v),
+      Uint32Tag(v) => uint32(v),
+      Uint64Tag(v) => uint64(v),
+    }
+  }
+  and value = (value: a, state) => {
+    match (GrainValue.getTag(value)) {
+      HeapTag(v) => heapValueToString(v, state),
+      ShortTag(v) => shortValueToString(v, state),
+      NumberTag(v) => number(v),
+      ConstantTag(v) => constantValueToString(v),
+      ReservedTag(_) => Doc.string("<unknown value>"),
+    }
+  }
+
+  provide { value }
+}
+
+provide let toString = (value: a) =>
+  Doc.Engine.toString(LF, 80, Stringify.value(value, Stringify.emptyState))
+
+print(toString(32))

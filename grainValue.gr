@@ -1,0 +1,272 @@
+/**
+ * Unsafe utilities for extracting runtime tag information from grain values.
+ *
+ *
+ * Note:
+ *   This module is unsafe and should be used with caution.
+ *   The grain team offers no guarantees on breaking changes or
+ *   end user support.
+ */
+module GrainValue
+
+from "runtime/unsafe/wasmi32" include WasmI32
+from "runtime/unsafe/tags" include Tags
+
+primitive magic = "@magic"
+
+// TODO: Is there a better way to have completely abstract types?
+/** Represents a generic grain heap value. */
+abstract type HeapValue<a> = a
+/** Represents a generic grain short value. */
+abstract type ShortValue<a> = a
+/** Represents an unknown value. */
+abstract type UnknownValue<a> = a
+/** Represents a generic grain constant value. */
+abstract type ConstantValue<a> = a
+
+/** Represents a generic grain tuple value. */
+abstract type TupleValue<a> = a
+/** Represents a generic grain array value. */
+abstract type ArrayValue<a> = a
+/** Represents a generic grain record value. */
+abstract type RecordValue<a> = a
+/** Represents a generic grain ADT value. */
+abstract type ADTValue<a> = a
+/** Represents a generic grain lambda value. */
+abstract type LambdaValue<a> = a
+
+/**
+ * Represents a tagged grain number value.
+ */
+provide enum NumberTag {
+  SimpleNumberTag(Number),
+  Int64Tag(Int64),
+  Float64Tag(Float64),
+  RationalTag(Rational),
+  BigIntTag(BigInt),
+}
+
+/**
+ * Represents a tagged grain stack value.
+ *
+ * Note: The `a` is `forall a`, meaning we never want to unify it.
+ */
+provide enum StackTag<a> {
+  /** simple number - 0bxx1 */
+  NumberTag(Number),
+  /** heap value - 0b00x */
+  HeapTag(HeapValue<a>),
+  /** short value - 0b01x */
+  ShortTag(ShortValue<a>),
+  /** reserved tag - 0b10x */
+  ReservedTag(UnknownValue<a>),
+  /** constant tag - 0b11x */
+  ConstantTag(ConstantValue<a>),
+}
+
+/**
+ * Represents a tagged grain heap value.
+ *
+ * Note: The `a` is `forall a`, meaning we never want to unify it.
+ */
+provide enum HeapTag<a> {
+  TupleTag(TupleValue<a>),
+  ArrayTag(ArrayValue<a>),
+  RecordTag(RecordValue<a>),
+  ADTTag(ADTValue<a>),
+  ClosureTag(LambdaValue<a>),
+  StringTag(String),
+  BytesTag(Bytes),
+  BoxedNumberTag(Number),
+  Int32Tag(Int32),
+  Float32Tag(Float32),
+  Uint32Tag(Uint32),
+  Uint64Tag(Uint64),
+}
+
+/**
+ * Represents a tagged grain short value.
+ *
+ * Note: The `a` is `forall a`, meaning we never want to unify it.
+ */
+provide enum ShortTag {
+  /** Char - 0b00000 */
+  CharTag(Char),
+  /** Int8 - 0b00001 */
+  Int8Tag(Int8),
+  /** Int16 - 0b00010 */
+  Int16Tag(Int16),
+  /** Uint8 - 0b00011 */
+  Uint8Tag(Uint8),
+  /** Uint16 - 0b00100 */
+  Uint16Tag(Uint16),
+}
+
+// Stack tagging
+@unsafe
+provide let isSimpleNumberValue = a => {
+  use WasmI32.{ (&), (==) }
+  (WasmI32.fromGrain(a) & Tags._GRAIN_NUMBER_TAG_MASK)
+    == Tags._GRAIN_NUMBER_TAG_TYPE
+}
+@unsafe
+provide let isHeapValue = a => {
+  use WasmI32.{ (&), (==) }
+  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_TAG_MASK)
+    == Tags._GRAIN_GENERIC_HEAP_TAG_TYPE
+}
+@unsafe
+let isConstantValue = a => {
+  use WasmI32.{ (&), (==) }
+  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_TAG_MASK)
+    == Tags._GRAIN_CONST_TAG_TYPE
+}
+@unsafe
+let isShortValue = a => {
+  use WasmI32.{ (&), (==) }
+  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_TAG_MASK)
+    == Tags._GRAIN_SHORTVAL_TAG_TYPE
+}
+
+/**
+ * Provides a tagged stack value based on the grain value type.
+ *
+ * @param value: The grain value to tag.
+ *
+ * @returns A tagged grain value that can be used to extract the value information.
+ *
+ * Note: The `a` is `forall a`, meaning we never want to unify it.
+ */
+@unsafe
+provide let getTag = (value: a) => {
+  match (value) {
+    _ when isSimpleNumberValue(value) => NumberTag(magic(value): Number),
+    _ when isHeapValue(value) => HeapTag(magic(value): HeapValue<b>),
+    _ when isShortValue(value) => ShortTag(magic(value): ShortValue<b>),
+    _ when isConstantValue(value) =>
+      ConstantTag(magic(value): ConstantValue<b>),
+    _ => ReservedTag(magic(value): UnknownValue<b>),
+  }
+}
+
+/**
+ * Provides a tagged heap value based on the grain value type.
+ *
+ * @param value: The grain heap value to tag.
+ *
+ * @returns A tagged grain heap value that can be used to extract the value information.
+ *
+ * Note: The `a` is `forall a`, meaning we never want to unify it.
+ */
+@unsafe
+provide let getHeapTag = (value: HeapValue<a>) => {
+  use WasmI32.{ (==) }
+  let ptr = WasmI32.fromGrain(value)
+  let tag = WasmI32.load(ptr, 0n)
+  let tagged = match (tag) {
+    _ when tag == Tags._GRAIN_TUPLE_HEAP_TAG => TupleTag(magic(value): b),
+    _ when tag == Tags._GRAIN_ARRAY_HEAP_TAG => ArrayTag(magic(value): b),
+    _ when tag == Tags._GRAIN_RECORD_HEAP_TAG => RecordTag(magic(value): b),
+    _ when tag == Tags._GRAIN_ADT_HEAP_TAG => ADTTag(magic(value): b),
+    _ when tag == Tags._GRAIN_LAMBDA_HEAP_TAG => ClosureTag(magic(value): b),
+    _ when tag == Tags._GRAIN_STRING_HEAP_TAG =>
+      StringTag(magic(value): String),
+    _ when tag == Tags._GRAIN_BYTES_HEAP_TAG => BytesTag(magic(value): Bytes),
+    _ when tag == Tags._GRAIN_BOXED_NUM_HEAP_TAG =>
+      BoxedNumberTag(magic(value): Number),
+    _ when tag == Tags._GRAIN_INT32_HEAP_TAG => Int32Tag(magic(value): Int32),
+    _ when tag == Tags._GRAIN_FLOAT32_HEAP_TAG =>
+      Float32Tag(magic(value): Float32),
+    _ when tag == Tags._GRAIN_UINT32_HEAP_TAG =>
+      Uint32Tag(magic(value): Uint32),
+    _ when tag == Tags._GRAIN_UINT64_HEAP_TAG =>
+      Uint64Tag(magic(value): Uint64),
+    _ => fail "Impossible: Invalid heap value tag",
+  }
+  ignore(value)
+  return tagged
+}
+
+/**
+ * Provides a tagged number value based on the grain value type.
+ *
+ * @param value: The grain number value to tag.
+ *
+ * @returns A tagged grain number value that can be used to extract the value information.
+ */
+@unsafe
+provide let getNumberTag = (value: Number) => {
+  use WasmI32.{ (==) }
+  if (isSimpleNumberValue(value)) {
+    SimpleNumberTag(magic(value): Number)
+  } else {
+    let ptr = WasmI32.fromGrain(value)
+    let tag = WasmI32.load(ptr, 4n)
+    let tagged = match (tag) {
+      _ when tag == Tags._GRAIN_INT64_BOXED_NUM_TAG =>
+        Int64Tag(magic(value): Int64),
+      _ when tag == Tags._GRAIN_FLOAT64_BOXED_NUM_TAG =>
+        Float64Tag(magic(value): Float64),
+      _ when tag == Tags._GRAIN_RATIONAL_BOXED_NUM_TAG =>
+        RationalTag(magic(value): Rational),
+      _ when tag == Tags._GRAIN_BIGINT_BOXED_NUM_TAG =>
+        BigIntTag(magic(value): BigInt),
+      _ => fail "Impossible: Invalid boxed number value tag",
+    }
+    ignore(value)
+    tagged
+  }
+}
+
+// Short tagging
+@unsafe
+let isChar = a => {
+  use WasmI32.{ (&), (==) }
+  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+    == Tags._GRAIN_CHAR_SHORTVAL_TAG
+}
+@unsafe
+let isInt8 = a => {
+  use WasmI32.{ (&), (==) }
+  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+    == Tags._GRAIN_INT8_TAG_MASK
+}
+@unsafe
+let isInt16 = a => {
+  use WasmI32.{ (&), (==) }
+  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+    == Tags._GRAIN_INT16_TAG_MASK
+}
+@unsafe
+let isUInt8 = a => {
+  use WasmI32.{ (&), (==) }
+  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+    == Tags._GRAIN_UINT8_TAG_MASK
+}
+@unsafe
+let isUInt16 = a => {
+  use WasmI32.{ (&), (==) }
+  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+    == Tags._GRAIN_UINT16_TAG_MASK
+}
+
+/**
+ * Provides a tagged short value based on the grain value type.
+ *
+ * @param value: The grain short value to tag.
+ *
+ * @returns A tagged grain short value that can be used to extract the value information.
+ *
+ * Note: The `a` is `forall a`, meaning we never want to unify it.
+ */
+@unsafe
+provide let getShortTag = (value: ShortValue<a>) => {
+  match (value) {
+    _ when isChar(value) => CharTag(magic(value): Char),
+    _ when isInt8(value) => Int8Tag(magic(value): Int8),
+    _ when isInt16(value) => Int16Tag(magic(value): Int16),
+    _ when isUInt8(value) => Uint8Tag(magic(value): Uint8),
+    _ when isUInt16(value) => Uint16Tag(magic(value): Uint16),
+    _ => fail "Impossible: Invalid short value tag",
+  }
+}

@@ -1,0 +1,30 @@
+module ToStringTest
+
+from "./toString.gr" include ToString
+use ToString.{ toString }
+
+// TODO: Heap values
+// Short Values
+assert toString('a') == "a" // Char
+assert toString('\t') == "\t" // Char
+assert toString('\'') == "'" // Char
+assert toString(-32s) == "-32" // Int8
+assert toString(0s) == "0" // Int8
+assert toString(32s) == "32" // Int8
+assert toString(-32S) == "-32" // Int16
+assert toString(0S) == "0" // Int16
+assert toString(32S) == "32" // Int16
+assert toString(0us) == "0" // UInt8
+assert toString(32us) == "32" // UInt8
+assert toString(0uS) == "0" // UInt16
+assert toString(32uS) == "32" // UInt16
+// Constants
+assert toString(void) == "void"
+assert toString(true) == "true"
+assert toString(false) == "false"
+// Number
+assert toString(-32) == "-32" // Simple Number
+assert toString(0) == "0" // Simple Number
+assert toString(32) == "32" // Simple Number
+// TODO: Complex Heap Values -- nested, recursive, mixed, nested escaping '\'', '\t', etc...
+// TODO: Builtins -- list, range, Option, Result
