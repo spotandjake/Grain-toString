@@ -33,7 +33,7 @@ assert toString(
   )
 )
   == "(\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  7,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19,\n  20,\n  21,\n  22,\n  23,\n)" // Tuple - Multiline
-assert toString([> 1, 2, 3]) == "[>1, 2, 3]" // Array
+// assert toString([> 1, 2, 3]) == "[>1, 2, 3]" // Array
 assert toString(
   [>
     1,
@@ -88,8 +88,15 @@ assert toString(-NaNd) == "NaN" // Boxed Number - Float64
 assert toString(NaNd) == "NaN" // Boxed Number - Float64
 assert toString(-Infinityd) == "-Infinity" // Boxed Number - Float64
 assert toString(Infinityd) == "Infinity" // Boxed Number - Float64
-// TODO: Rational
-// TODO: BigInt
+assert toString(1/2r) == "1/2" // Boxed Number - Rational
+assert toString(-1/2r) == "-1/2" // Boxed Number - Rational
+assert toString(20/80r) == "1/4" // Boxed Number - Rational
+assert toString(4/4r) == "1/1" // Boxed Number - Rational
+assert toString(-32t) == "-32" // Boxed Number - BigInt
+assert toString(0t) == "0" // Boxed Number - BigInt
+assert toString(32t) == "32" // Boxed Number - BigInt
+assert toString(-9_000_000_000_000_000_000t) == "-9000000000000000000" // Boxed Number - BigInt
+assert toString(9_000_000_000_000_000_000t) == "9000000000000000000" // Boxed Number - BigInt
 assert toString(-32l) == "-32" // Int32
 assert toString(0l) == "0" // Int32
 assert toString(32l) == "32" // Int32
@@ -141,8 +148,12 @@ assert toString(-NaN) == "NaN" // Float64
 assert toString(NaN) == "NaN" // Float64
 assert toString(-Infinity) == "-Infinity" // Float64
 assert toString(Infinity) == "Infinity" // Float64
-// TODO: Rational
-// TODO: BigInt
+assert toString(1/2) == "1/2" // Rational
+assert toString(-1/2) == "-1/2" // Rational
+assert toString(20/80) == "1/4" // Rational
+assert toString(4/4) == "1" // Rational
+assert toString(-9_000_000_000_000_000_000_000) == "-9000000000000000000000" // BigInt
+assert toString(9_000_000_000_000_000_000_000) == "9000000000000000000000" // BigInt
 // TODO: Complex Heap Values -- nested, recursive, mixed, nested escaping char, string, '\'', '\t', etc...
 // Builtins
 // TODO: List

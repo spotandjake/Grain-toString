@@ -6,6 +6,7 @@ from "runtime/unsafe/wasmf32" include WasmF32
 from "runtime/unsafe/wasmf64" include WasmF64
 from "runtime/unsafe/memory" include Memory
 from "runtime/unsafe/offsets" include Offsets
+from "runtime/bigint" include Bigint
 from "runtime/numberUtils" include NumberUtils
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
@@ -23,6 +24,8 @@ from "runtime/utf8" include Utf8
 use Utf8.{ usvEncodeLength, writeUtf8CodePoint }
 from "./grainValue.gr" include GrainValue
 from "./doc.gr" include Doc
+
+from "runtime/debugPrint" include DebugPrint
 
 // Specific stringification functions for various data types
 // TODO: I'm not sure we want these in a submodule, I like the extra organization for now.
@@ -52,7 +55,7 @@ module Stringify {
     let strLen = len * 3n - 1n // 2 hex digits + 1 space per byte
     let str = allocateString(strLen)
     let bytesOffset = ptr + Offsets._BYTES_DATA_OFFSET
-    let strOffset = str + Offsets._STR_LEN_OFFSET
+    let strOffset = str + Offsets._STR_DATA_OFFSET
     Memory.fill(strOffset, 0x20n, strLen) // Fill with spaces
     for (let mut i = 0n; i < len; i += 1n) {
       let n = WasmI32.load8U(bytesOffset, i)
@@ -82,9 +85,20 @@ module Stringify {
         ignore(v)
         Doc.string(NumberUtils.dtoa(num))
       },
-      // TODO: Implement these
-      GrainValue.RationalTag(v) => Doc.string("NIY: Rational"),
-      GrainValue.BigIntTag(v) => Doc.string("NIY: BigInt"),
+      GrainValue.RationalTag(v) => {
+        use Doc.{ (++) }
+        let ptr = WasmI32.fromGrain(v)
+        let numerator = Bigint.bigIntToString10(WasmI32.load(ptr, 8n)) // TODO: Magic Offset
+        let denominator = Bigint.bigIntToString10(WasmI32.load(ptr, 12n)) // TODO: Magic Offset
+        ignore(v)
+        Doc.string(numerator) ++ Doc.string("/") ++ Doc.string(denominator)
+      },
+      GrainValue.BigIntTag(v) => {
+        let ptr = WasmI32.fromGrain(v)
+        let str = Bigint.bigIntToString10(ptr)
+        ignore(v)
+        Doc.string(str)
+      },
     }
   }
   @unsafe
@@ -158,7 +172,6 @@ module Stringify {
   @unsafe
   provide let uint16 = (val: Uint16) =>
     Doc.string(NumberUtils.itoa32(untagUint16(val), defaultRadix))
-  // Constant Values
 
   // Polymorphic conversions
   let shortValueToString = (val: GrainValue.ShortValue<a>, state) => {
@@ -172,6 +185,7 @@ module Stringify {
     }
   }
 
+  // Constant Values
   @unsafe
   let constantValueToString = (val: GrainValue.ConstantValue<a>) => {
     use WasmI32.{ (==) }
@@ -250,7 +264,7 @@ module Stringify {
     use Doc.{ (++) }
     use WasmI32.{ (+), (-), (*), (==), (>=) }
     let ptr = WasmI32.fromGrain(val)
-    let len = WasmI32.load(ptr, Offsets._STR_DATA_OFFSET)
+    let len = WasmI32.load(ptr, Offsets._ARRAY_LEN_OFFSET)
     let mut vals = []
     for (
       let mut i = len * Offsets._ARRAY_ITEM_SIZE - Offsets._ARRAY_ITEM_SIZE;
