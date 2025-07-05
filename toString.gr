@@ -5,6 +5,7 @@ from "runtime/unsafe/wasmi64" include WasmI64
 from "runtime/unsafe/wasmf32" include WasmF32
 from "runtime/unsafe/wasmf64" include WasmF64
 from "runtime/unsafe/memory" include Memory
+from "runtime/unsafe/offsets" include Offsets
 from "runtime/numberUtils" include NumberUtils
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
@@ -44,14 +45,14 @@ module Stringify {
     use Doc.{ (++) }
     use WasmI32.{ (+), (-), (*), (<), (>), (==) }
     let ptr = WasmI32.fromGrain(val)
-    let len = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+    let len = WasmI32.load(ptr, Offsets._BYTES_LEN_OFFSET)
     let len = if (len > 32n) 32n else len // Limit to 32 bytes for display
 
     let hex = NumberUtils.get_HEX_DIGITS()
     let strLen = len * 3n - 1n // 2 hex digits + 1 space per byte
     let str = allocateString(strLen)
-    let bytesOffset = ptr + 8n // TODO: Magic Offset
-    let strOffset = str + 8n // TODO: Magic Offset
+    let bytesOffset = ptr + Offsets._BYTES_DATA_OFFSET
+    let strOffset = str + Offsets._STR_LEN_OFFSET
     Memory.fill(strOffset, 0x20n, strLen) // Fill with spaces
     for (let mut i = 0n; i < len; i += 1n) {
       let n = WasmI32.load8U(bytesOffset, i)
@@ -71,13 +72,13 @@ module Stringify {
         Doc.string(NumberUtils.itoa32(untagSimpleNumber(v), defaultRadix)),
       GrainValue.Int64Tag(v) => {
         let ptr = WasmI32.fromGrain(v)
-        let num = WasmI64.load(ptr, 8n) // TODO: Magic Offset
+        let num = WasmI64.load(ptr, Offsets._INT64_VALUE_OFFSET)
         ignore(v)
         Doc.string(NumberUtils.itoa64(num, defaultRadix))
       },
       GrainValue.Float64Tag(v) => {
         let ptr = WasmI32.fromGrain(v)
-        let num = WasmF64.load(ptr, 8n) // TODO: Magic Offset
+        let num = WasmF64.load(ptr, Offsets._FLOAT64_VALUE_OFFSET)
         ignore(v)
         Doc.string(NumberUtils.dtoa(num))
       },
@@ -89,28 +90,30 @@ module Stringify {
   @unsafe
   provide let int32 = (val: Int32) => {
     let ptr = WasmI32.fromGrain(val)
-    let num = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+    let num = WasmI32.load(ptr, Offsets._INT32_VALUE_OFFSET)
     ignore(val)
     Doc.string(NumberUtils.itoa32(num, defaultRadix))
   }
   @unsafe
   provide let float32 = (val: Float32) => {
     let ptr = WasmI32.fromGrain(val)
-    let num = WasmF64.promoteF32(WasmF32.load(ptr, 4n)) // TODO: Magic Offset
+    let num = WasmF64.promoteF32(
+      WasmF32.load(ptr, Offsets._FLOAT32_VALUE_OFFSET)
+    )
     ignore(val)
     Doc.string(NumberUtils.dtoa(num))
   }
   @unsafe
   provide let uint32 = (val: Uint32) => {
     let ptr = WasmI32.fromGrain(val)
-    let num = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+    let num = WasmI32.load(ptr, Offsets._UINT32_VALUE_OFFSET)
     ignore(val)
     Doc.string(NumberUtils.utoa32(num, defaultRadix))
   }
   @unsafe
   provide let uint64 = (val: Uint64) => {
     let ptr = WasmI32.fromGrain(val)
-    let num = WasmI64.load(ptr, 8n) // TODO: Magic Offset
+    let num = WasmI64.load(ptr, Offsets._UINT64_VALUE_OFFSET)
     ignore(val)
     Doc.string(NumberUtils.utoa64(num, defaultRadix))
   }
@@ -133,7 +136,7 @@ module Stringify {
         let usv = untagChar(val)
         let byteCount = usvEncodeLength(usv)
         let string = allocateString(byteCount)
-        writeUtf8CodePoint(string + 8n, usv) // TODO: Magic Offset
+        writeUtf8CodePoint(string + Offsets._STR_DATA_OFFSET, usv)
         WasmI32.toGrain(string): String
       },
     }
@@ -247,10 +250,14 @@ module Stringify {
     use Doc.{ (++) }
     use WasmI32.{ (+), (-), (*), (==), (>=) }
     let ptr = WasmI32.fromGrain(val)
-    let len = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+    let len = WasmI32.load(ptr, Offsets._STR_DATA_OFFSET)
     let mut vals = []
-    for (let mut i = len * 4n - 4n; i >= 0n; i -= 4n) { // TODO: Magic Offset
-      let fieldPtr = WasmI32.load(ptr + 8n, i) // TODO: Magic Offset
+    for (
+      let mut i = len * Offsets._ARRAY_ITEM_SIZE - Offsets._ARRAY_ITEM_SIZE;
+      i >= 0n;
+      i -= Offsets._ARRAY_ITEM_SIZE
+    ) {
+      let fieldPtr = WasmI32.load(ptr + Offsets._ARRAY_DATA_OFFSET, i)
       let fieldVal = WasmI32.toGrain(fieldPtr): a
       vals = [value(fieldVal, state), ...vals]
     }
