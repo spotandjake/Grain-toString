@@ -1,3 +1,4 @@
+@noPervasives
 module ToString
 
 from "runtime/unsafe/wasmi32" include WasmI32
@@ -26,6 +27,9 @@ from "./grainValue.gr" include GrainValue
 from "./doc.gr" include Doc
 
 from "runtime/debugPrint" include DebugPrint
+
+primitive ignore = "@ignore"
+primitive (!) = "@not"
 
 // Specific stringification functions for various data types
 // TODO: I'm not sure we want these in a submodule, I like the extra organization for now.
@@ -207,11 +211,8 @@ module Stringify {
       ArrayTag(v) =>
         array(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
       // TODO: More complex possible recursive values
-      RecordTag(_) => fail "NIY: Record",
-      ADTTag(_) => {
-        print(val)
-        fail "NIY: ADT"
-      },
+      RecordTag(_) => Doc.string("NIY: Record"),
+      ADTTag(_) => Doc.string("NIY: ADT"),
       ClosureTag(_) => Doc.string("<lambda>"),
       StringTag(v) => string(v),
       BytesTag(v) => bytes(v),
