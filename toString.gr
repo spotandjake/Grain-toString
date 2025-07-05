@@ -185,10 +185,16 @@ module Stringify {
     // TODO: Handle Cycle
     // Get The Heap Tag
     match (GrainValue.getHeapTag(val)) {
-      // TODO: More complex possibly recursive values
       TupleTag(v) =>
         tuple(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
-      ArrayTag(_) | RecordTag(_) | ADTTag(_) => fail "NIY",
+      ArrayTag(v) =>
+        array(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
+      // TODO: More complex possible recursive values
+      RecordTag(_) => fail "NIY: Record",
+      ADTTag(_) => {
+        print(val)
+        fail "NIY: ADT"
+      },
       ClosureTag(_) => Doc.string("<lambda>"),
       StringTag(v) => string(v),
       BytesTag(v) => bytes(v),
@@ -235,6 +241,36 @@ module Stringify {
     } else {
       content
     }
+  }
+  and array = (val: GrainValue.ArrayValue<a>, state) => {
+    let state = { ...state, topLevel: false }
+    use Doc.{ (++) }
+    use WasmI32.{ (+), (-), (*), (==), (>=) }
+    let ptr = WasmI32.fromGrain(val)
+    let len = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+    let mut vals = []
+    for (let mut i = len * 4n - 4n; i >= 0n; i -= 4n) { // TODO: Magic Offset
+      let fieldPtr = WasmI32.load(ptr + 8n, i) // TODO: Magic Offset
+      let fieldVal = WasmI32.toGrain(fieldPtr): a
+      vals = [value(fieldVal, state), ...vals]
+    }
+    ignore(val)
+    Doc.arrayBrackets(
+      Doc.indent(
+        Doc.concatMap(
+          lead=next => Doc._break,
+          sep=(prev, next) => Doc.breakableSpace,
+          trail=prev => Doc.empty,
+          f=(final, v) => if (final) {
+            Doc.group(v) ++ Doc.trailingComma
+          } else {
+            Doc.group(v ++ Doc.comma)
+          },
+          vals
+        )
+      )
+        ++ Doc._break
+    )
   }
   and value = (val: a, state) => {
     match (GrainValue.getTag(val)) {
