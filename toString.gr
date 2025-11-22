@@ -323,18 +323,41 @@ module Stringify {
       None => Doc.string("<record value>"),
     }
   }
+  and list = (val: List<a>, state) => {
+    use Doc.{ (++) }
+    Doc.listBrackets(
+      Doc.indent(
+        Doc.concatMap(
+          lead=next => Doc._break,
+          sep=(prev, next) => Doc.breakableSpace,
+          trail=prev => Doc.empty,
+          f=(final, val) => if (final) {
+            Doc.group(value(val, state)) ++ Doc.trailingComma
+          } else {
+            Doc.group(value(val, state) ++ Doc.comma)
+          },
+          val
+        )
+      )
+        ++ Doc._break
+    )
+  }
   and adt = (val: GrainValue.ADTValue<a>, state) => {
     use Doc.{ (++) }
     let (name, variantData) = GrainValue.getADTData(val)
-    match (name) {
-      Some(name) => Doc.string(name),
-      None => Doc.string("<enum value>"),
-    } ++ match (variantData) {
-      GrainValue.TupleVariant(vals) =>
-        tupleHelp(vals, true, { ...state, topLevel: false }),
-      GrainValue.RecordVariant(vals) =>
-        _recordHelp(vals, { ...state, topLevel: false }),
-      EmptyVariant => Doc.empty,
+    if (GrainValue.isListADT(val)) {
+      list(magic(val): List<a>, { ...state, topLevel: false })
+    } else {
+      match (name) {
+        Some(name) => Doc.string(name),
+        None => Doc.string("<enum value>"),
+      } ++ match (variantData) {
+        GrainValue.TupleVariant(vals) =>
+          tupleHelp(vals, true, { ...state, topLevel: false }),
+        GrainValue.RecordVariant(vals) =>
+          _recordHelp(vals, { ...state, topLevel: false }),
+        EmptyVariant => Doc.empty,
+      }
     }
   }
   and taggedValue = (val: GrainValue.StackTag<d>, state) => {

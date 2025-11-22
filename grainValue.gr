@@ -456,6 +456,14 @@ provide enum VariantType<a> {
 }
 
 @unsafe
+provide let isListADT = (value: ADTValue<a>) => {
+  use WasmI32.{ (==), (>>) }
+  let ptr = WasmI32.fromGrain(value)
+  let typeId = WasmI32.load(ptr, 8n) >> 1n // TODO: Magic Offset
+  typeId == _LIST_ID
+}
+
+@unsafe
 provide let getADTData = (value: ADTValue<a>) => {
   use WasmI32.{ (+), (-), (*), (==), (>=), (<) }
   let ptr = WasmI32.fromGrain(value)
