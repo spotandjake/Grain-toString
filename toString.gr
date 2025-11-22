@@ -9,9 +9,11 @@ from "runtime/unsafe/memory" include Memory
 from "runtime/unsafe/offsets" include Offsets
 from "runtime/bigint" include Bigint
 from "runtime/numberUtils" include NumberUtils
+from "runtime/numbers" include Numbers
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
   allocateString,
+  allocateArray,
   // Tagging
   untagSimpleNumber,
   // Short Values
@@ -26,13 +28,12 @@ use Utf8.{ usvEncodeLength, writeUtf8CodePoint }
 from "./grainValue.gr" include GrainValue
 from "./doc.gr" include Doc
 
-from "runtime/debugPrint" include DebugPrint
-
 primitive ignore = "@ignore"
 primitive (!) = "@not"
+primitive arrayLength = "@array.length"
+primitive magic = "@magic"
 
 // Specific stringification functions for various data types
-// TODO: I'm not sure we want these in a submodule, I like the extra organization for now.
 module Stringify {
   // Settings
   @unsafe
@@ -45,7 +46,8 @@ module Stringify {
   provide let emptyState = { topLevel: true, cycleStack: [] }
 
   // Heap Values
-  provide let string = (val: String) => Doc.string(val) // TODO: Escaping???
+  @unsafe
+  provide let string = (val: String) => Doc.string(val) // TODO: Escaping
   @unsafe
   provide let bytes = (val: Bytes) => {
     // TODO: Is there a slightly safer way of doing this?
@@ -103,6 +105,7 @@ module Stringify {
         ignore(v)
         Doc.string(str)
       },
+      GrainValue.UnknownNumberTag => Doc.string("<unknown boxed number>"),
     }
   }
   @unsafe
@@ -186,6 +189,7 @@ module Stringify {
       Int16Tag(v) => int16(v),
       Uint8Tag(v) => uint8(v),
       Uint16Tag(v) => uint16(v),
+      UnknownShortTag => Doc.string("<unknown short value>"),
     }
   }
 
@@ -203,16 +207,16 @@ module Stringify {
 
   @unsafe
   let rec heapValueToString = (val: GrainValue.HeapValue<b>, state) => {
-    // TODO: Handle Cycle
+    // TODO: Handle Cycle - Check the stack for cycles emit <Cycle $n>
     // Get The Heap Tag
     match (GrainValue.getHeapTag(val)) {
       TupleTag(v) =>
         tuple(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
       ArrayTag(v) =>
         array(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
-      // TODO: More complex possible recursive values
-      RecordTag(_) => Doc.string("NIY: Record"),
-      ADTTag(_) => Doc.string("NIY: ADT"),
+      RecordTag(v) =>
+        _record(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
+      ADTTag(v) => adt(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
       ClosureTag(_) => Doc.string("<lambda>"),
       StringTag(v) => string(v),
       BytesTag(v) => bytes(v),
@@ -223,76 +227,124 @@ module Stringify {
       Float32Tag(v) => float32(v),
       Uint32Tag(v) => uint32(v),
       Uint64Tag(v) => uint64(v),
+      // Unknown
+      GrainValue.UnknownTag => Doc.string("<unknown heap value>"),
     }
   }
-  and tuple = (val: GrainValue.TupleValue<a>, state) => {
+  and tupleHelp = (vals: List<GrainValue.StackTag<f>>, isVariant, state) => {
     let state = { ...state, topLevel: false }
     use Doc.{ (++) }
-    use WasmI32.{ (+), (-), (*), (==), (>=) }
-    let ptr = WasmI32.fromGrain(val)
-    let len = WasmI32.load(ptr, 4n) // TODO: Magic Offset
-    let mut vals = []
-    for (let mut i = len * 4n - 4n; i >= 0n; i -= 4n) { // TODO: Magic Offset
-      let fieldPtr = WasmI32.load(ptr + 8n, i) // TODO: Magic Offset
-      let fieldVal = WasmI32.toGrain(fieldPtr): a
-      vals = [value(fieldVal, state), ...vals]
-    }
-    ignore(val)
     let content = Doc.parens(
       Doc.indent(
         Doc.concatMap(
           lead=next => Doc._break,
           sep=(prev, next) => Doc.breakableSpace,
           trail=prev => Doc.empty,
-          f=(final, v) => if (final) {
-            Doc.group(v) ++ Doc.trailingComma
-          } else {
-            Doc.group(v ++ Doc.comma)
+          f=(final, val) => {
+            let val = taggedValue(val, state)
+            if (final) {
+              Doc.group(val) ++ Doc.trailingComma
+            } else {
+              Doc.group(val ++ Doc.comma)
+            }
           },
           vals
         )
       )
         ++ Doc._break
     )
-    if (len == 1n) {
-      Doc.string("box") ++ content
-    } else {
-      content
+    match (vals) {
+      [_] when !isVariant => Doc.string("box") ++ content,
+      _ => content,
     }
   }
-  and array = (val: GrainValue.ArrayValue<a>, state) => {
+  and tuple = (val: GrainValue.TupleValue<e>, state) => {
+    let vals = GrainValue.getTupleData(val)
+    tupleHelp(vals, false, state)
+  }
+  and array = (val: Array<a>, state) => {
     let state = { ...state, topLevel: false }
     use Doc.{ (++) }
-    use WasmI32.{ (+), (-), (*), (==), (>=) }
-    let ptr = WasmI32.fromGrain(val)
-    let len = WasmI32.load(ptr, Offsets._ARRAY_LEN_OFFSET)
+    use Numbers.{ (>=), (-) }
     let mut vals = []
-    for (
-      let mut i = len * Offsets._ARRAY_ITEM_SIZE - Offsets._ARRAY_ITEM_SIZE;
-      i >= 0n;
-      i -= Offsets._ARRAY_ITEM_SIZE
-    ) {
-      let fieldPtr = WasmI32.load(ptr + Offsets._ARRAY_DATA_OFFSET, i)
-      let fieldVal = WasmI32.toGrain(fieldPtr): a
-      vals = [value(fieldVal, state), ...vals]
+    for (let mut i = arrayLength(val) - 1; i >= 0; i -= 1) {
+      // NOTE: We use `magic` here to prevent unifying the param
+      vals = [value(magic(val[i]): c, state), ...vals]
     }
-    ignore(val)
     Doc.arrayBrackets(
       Doc.indent(
         Doc.concatMap(
           lead=next => Doc._break,
           sep=(prev, next) => Doc.breakableSpace,
           trail=prev => Doc.empty,
-          f=(final, v) => if (final) {
-            Doc.group(v) ++ Doc.trailingComma
+          f=(final, val) => if (final) {
+            Doc.group(val) ++ Doc.trailingComma
           } else {
-            Doc.group(v ++ Doc.comma)
+            Doc.group(val ++ Doc.comma)
           },
           vals
         )
       )
         ++ Doc._break
     )
+  }
+  and _recordHelp = (vals: List<(String, GrainValue.StackTag<f>)>, state) => {
+    use Doc.{ (++) }
+    Doc.braces(
+      Doc.indent(
+        Doc.concatMap(
+          lead=next => Doc.space ++ Doc._break,
+          sep=(prev, next) => Doc.breakableSpace,
+          trail=last => Doc.space,
+          f=(final, (name, val)) => {
+            let val = taggedValue(val, state)
+            let entry = Doc.group(
+              Doc.string(name) ++ Doc.string(":") ++ Doc.space ++ val
+            )
+            if (final) {
+              entry ++ match (vals) {
+                [vals] => Doc.comma,
+                _ => Doc.trailingComma,
+              }
+            } else {
+              Doc.group(entry ++ Doc.comma)
+            }
+          },
+          vals
+        )
+      )
+        ++ Doc._break
+    )
+  }
+  and _record = (val: GrainValue.RecordValue<a>, state) => {
+    let vals = GrainValue.getRecordData(val)
+    match (vals) {
+      Some(vals) => _recordHelp(vals, state),
+      None => Doc.string("<record value>"),
+    }
+  }
+  and adt = (val: GrainValue.ADTValue<a>, state) => {
+    use Doc.{ (++) }
+    let (name, variantData) = GrainValue.getADTData(val)
+    match (name) {
+      Some(name) => Doc.string(name),
+      None => Doc.string("<enum value>"),
+    } ++ match (variantData) {
+      GrainValue.TupleVariant(vals) =>
+        tupleHelp(vals, true, { ...state, topLevel: false }),
+      GrainValue.RecordVariant(vals) =>
+        _recordHelp(vals, { ...state, topLevel: false }),
+      EmptyVariant => Doc.empty,
+    }
+  }
+  and taggedValue = (val: GrainValue.StackTag<d>, state) => {
+    match (val) {
+      HeapTag(v) => heapValueToString(v, state),
+      ShortTag(v) => shortValueToString(v, state),
+      NumberTag(v) => number(v),
+      ConstantTag(v) => constantValueToString(v),
+      ReservedTag(_) => Doc.string("<unknown value>"),
+    }
   }
   and value = (val: a, state) => {
     match (GrainValue.getTag(val)) {
@@ -308,4 +360,4 @@ module Stringify {
 }
 
 provide let toString = (val: a) =>
-  Doc.Engine.toString(LF, 80, Stringify.value(val, Stringify.emptyState))
+  Doc.Engine.toString(LF, 80l, Stringify.value(val, Stringify.emptyState))

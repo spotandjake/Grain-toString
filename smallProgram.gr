@@ -1,0 +1,5 @@
+module SmallProgram
+
+from "./toString.gr" include ToString
+
+print("Hello World!")

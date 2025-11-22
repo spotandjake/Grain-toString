@@ -3,161 +3,235 @@ module ToStringTest
 from "./toString.gr" include ToString
 use ToString.{ toString }
 
-// Heap values
-assert toString((1, 2, 3)) == "(1, 2, 3)" // Tuple
-assert toString(
-  (
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    7,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    16,
-    17,
-    18,
-    19,
-    20,
-    21,
-    22,
-    23,
-  )
-)
-  == "(\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  7,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19,\n  20,\n  21,\n  22,\n  23,\n)" // Tuple - Multiline
-// assert toString([> 1, 2, 3]) == "[>1, 2, 3]" // Array
-assert toString(
-  [>
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-    9,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    16,
-    17,
-    18,
-    19,
-    20,
-    21,
-    22,
-    23,
-  ]
-)
-  == "[>\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  8,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19,\n  20,\n  21,\n  22,\n  23,\n]" // Array - Multiline
-// TODO: Record
-// TODO: ADT
-assert toString(() => void) == "<lambda>" // Lambda
-assert toString((a, b, c) => void) == "<lambda>" // Lambda
-
-// TODO: String
-assert toString(b"test") == "<bytes: 74 65 73 74>" // Bytes
-assert toString(
-  b"123456789123456789123456789123456789123456789123456789123456789123456789123456789123456789123456789"
-)
-  == "<bytes: 31 32 33 34 35 36 37 38 39 31 32 33 34 35 36 37 38 39 31 32 33 34 35 36 37 38 39 31 32 33 34 35...>" // Bytes
-assert toString(-9_000_000_000_000_000_000L) == "-9000000000000000000" // Boxed Number - Int64
-assert toString(-32L) == "-32" // Boxed Number - Int64
-assert toString(0L) == "0" // Boxed Number - Int64
-assert toString(32L) == "32" // Boxed Number - Int64
-assert toString(9_000_000_000_000_000_000L) == "9000000000000000000" // Boxed Number - Int64
-assert toString(-32.5d) == "-32.5" // Boxed Number - Float64
-assert toString(-32.0d) == "-32.0" // Boxed Number - Float64
-assert toString(-0.0d) == "0.0" // Boxed Number - Float64
-assert toString(0.0d) == "0.0" // Boxed Number - Float64
-assert toString(32.0d) == "32.0" // Boxed Number - Float64
-assert toString(32.5d) == "32.5" // Boxed Number - Float64
-assert toString(-NaNd) == "NaN" // Boxed Number - Float64
-assert toString(NaNd) == "NaN" // Boxed Number - Float64
-assert toString(-Infinityd) == "-Infinity" // Boxed Number - Float64
-assert toString(Infinityd) == "Infinity" // Boxed Number - Float64
-assert toString(1/2r) == "1/2" // Boxed Number - Rational
-assert toString(-1/2r) == "-1/2" // Boxed Number - Rational
-assert toString(20/80r) == "1/4" // Boxed Number - Rational
-assert toString(4/4r) == "1/1" // Boxed Number - Rational
-assert toString(-32t) == "-32" // Boxed Number - BigInt
-assert toString(0t) == "0" // Boxed Number - BigInt
-assert toString(32t) == "32" // Boxed Number - BigInt
-assert toString(-9_000_000_000_000_000_000t) == "-9000000000000000000" // Boxed Number - BigInt
-assert toString(9_000_000_000_000_000_000t) == "9000000000000000000" // Boxed Number - BigInt
-assert toString(-32l) == "-32" // Int32
-assert toString(0l) == "0" // Int32
-assert toString(32l) == "32" // Int32
-assert toString(-32.5f) == "-32.5" // Float32
-assert toString(-32.0f) == "-32.0" // Float32
-assert toString(-0.0f) == "0.0" // Float32
-assert toString(0.0f) == "0.0" // Float32
-assert toString(32.0f) == "32.0" // Float32
-assert toString(32.5f) == "32.5" // Float32
-assert toString(-NaNf) == "NaN" // Float32
-assert toString(NaNf) == "NaN" // Float32
-assert toString(-Infinityf) == "-Infinity" // Float32
-assert toString(Infinityf) == "Infinity" // Float32
-assert toString(0ul) == "0" // Uint32
-assert toString(32ul) == "32" // Uint32
-assert toString(0uL) == "0" // Uint64
-assert toString(32uL) == "32" // Uint64
 // Short Values
-assert toString('a') == "a" // Char
-assert toString('\t') == "\t" // Char
-assert toString('\'') == "'" // Char
-assert toString(-32s) == "-32" // Int8
-assert toString(0s) == "0" // Int8
-assert toString(32s) == "32" // Int8
-assert toString(-32S) == "-32" // Int16
-assert toString(0S) == "0" // Int16
-assert toString(32S) == "32" // Int16
-assert toString(0us) == "0" // UInt8
-assert toString(32us) == "32" // UInt8
-assert toString(0uS) == "0" // UInt16
-assert toString(32uS) == "32" // UInt16
+module ShortValues {
+  assert toString('a') == "a" // Char
+  assert toString('\t') == "\t" // Char
+  assert toString('\'') == "'" // Char
+  assert toString(-32s) == "-32" // Int8
+  assert toString(0s) == "0" // Int8
+  assert toString(32s) == "32" // Int8
+  assert toString(-32S) == "-32" // Int16
+  assert toString(0S) == "0" // Int16
+  assert toString(32S) == "32" // Int16
+  assert toString(0us) == "0" // UInt8
+  assert toString(32us) == "32" // UInt8
+  assert toString(0uS) == "0" // UInt16
+  assert toString(32uS) == "32" // UInt16
+}
 // Constants
-assert toString(void) == "void"
-assert toString(true) == "true"
-assert toString(false) == "false"
+module Constants {
+  assert toString(void) == "void"
+  assert toString(true) == "true"
+  assert toString(false) == "false"
+}
 // Number
-assert toString(-32) == "-32" // Simple Number
-assert toString(0) == "0" // Simple Number
-assert toString(32) == "32" // Simple Number
-assert toString(-9_000_000_000_000_000_000) == "-9000000000000000000" // Int64
-assert toString(9_000_000_000_000_000_000) == "9000000000000000000" // Int64
-assert toString(-32.5) == "-32.5" // Float64
-assert toString(-32.0) == "-32.0" // Float64
-assert toString(-0.0) == "0.0" // Float64
-assert toString(0.0) == "0.0" // Float64
-assert toString(32.0) == "32.0" // Float64
-assert toString(32.5) == "32.5" // Float64
-assert toString(-NaN) == "NaN" // Float64
-assert toString(NaN) == "NaN" // Float64
-assert toString(-Infinity) == "-Infinity" // Float64
-assert toString(Infinity) == "Infinity" // Float64
-assert toString(1/2) == "1/2" // Rational
-assert toString(-1/2) == "-1/2" // Rational
-assert toString(20/80) == "1/4" // Rational
-assert toString(4/4) == "1" // Rational
-assert toString(-9_000_000_000_000_000_000_000) == "-9000000000000000000000" // BigInt
-assert toString(9_000_000_000_000_000_000_000) == "9000000000000000000000" // BigInt
+module Number {
+  assert toString(-32) == "-32" // Simple Number
+  assert toString(0) == "0" // Simple Number
+  assert toString(32) == "32" // Simple Number
+  assert toString(-9_000_000_000_000_000_000) == "-9000000000000000000" // Int64
+  assert toString(9_000_000_000_000_000_000) == "9000000000000000000" // Int64
+  assert toString(-32.5) == "-32.5" // Float64
+  assert toString(-32.0) == "-32.0" // Float64
+  assert toString(-0.0) == "0.0" // Float64
+  assert toString(0.0) == "0.0" // Float64
+  assert toString(32.0) == "32.0" // Float64
+  assert toString(32.5) == "32.5" // Float64
+  assert toString(-NaN) == "NaN" // Float64
+  assert toString(NaN) == "NaN" // Float64
+  assert toString(-Infinity) == "-Infinity" // Float64
+  assert toString(Infinity) == "Infinity" // Float64
+  assert toString(1/2) == "1/2" // Rational
+  assert toString(-1/2) == "-1/2" // Rational
+  assert toString(20/80) == "1/4" // Rational
+  assert toString(4/4) == "1" // Rational
+  assert toString(-9_000_000_000_000_000_000_000) == "-9000000000000000000000" // BigInt
+  assert toString(9_000_000_000_000_000_000_000) == "9000000000000000000000" // BigInt
+}
+// Heap values
+module HeapValues {
+  // Tuple
+  assert toString((1, 2, 3)) == "(1, 2, 3)"
+  assert toString(
+    (
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      7,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+    )
+  )
+    == "(\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  7,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19,\n  20,\n  21,\n  22,\n  23,\n)" // Multiline
+  // Array
+  assert toString([> 1, 2, 3]) == "[>1, 2, 3]"
+  assert toString(
+    [>
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+    ]
+  )
+    == "[>\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  8,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19,\n  20,\n  21,\n  22,\n  23,\n]" // Multiline
+  // Record
+  record SingleRecord {
+    value: Number,
+  }
+  assert toString({ value: 1, }) == "{ value: 1, }"
+  record MultipleRecord {
+    value: Number,
+    value2: Number,
+  }
+  assert toString({ value: 1, value2: 2 }) == "{ value: 1, value2: 2 }"
+  record MultiRecord {
+    value: Number,
+    value2: Number,
+    value3: Number,
+    value4: Number,
+    value5: Number,
+    value6: Number,
+    value7: Number,
+    value8: Number,
+  }
+  assert toString(
+    {
+      value: 1,
+      value2: 2,
+      value3: 3,
+      value4: 4,
+      value5: 5,
+      value6: 6,
+      value7: 7,
+      value8: 8,
+    }
+  )
+    == "{ \n  value: 1,\n  value2: 2,\n  value3: 3,\n  value4: 4,\n  value5: 5,\n  value6: 6,\n  value7: 7,\n  value8: 8, \n}"
+  // ADT
+  enum TestEnum {
+    SimpleEnum,
+    TupleEnum(Number),
+    TupleEnum2(Number, Number),
+    RecordEnum{ value: Number, },
+    RecordEnum2{ value: Number, value2: Number },
+  }
+  assert toString(SimpleEnum) == "SimpleEnum" // No Data
+  assert toString(TupleEnum(1)) == "TupleEnum(1)" // Single Data
+  assert toString(TupleEnum2(1, 2)) == "TupleEnum2(1, 2)" // Multiple Data
+  assert toString(RecordEnum{ value: 1 }) == "RecordEnum{ value: 1, }" // Record Data
+  assert toString(RecordEnum2{ value: 1, value2: 2 })
+    == "RecordEnum2{ value: 1, value2: 2 }" // Record Multiple Data
+  // Lambda
+  assert toString(() => void) == "<lambda>"
+  assert toString((a, b, c) => void) == "<lambda>"
+  // TODO: String
+  // Bytes
+  assert toString(b"test") == "<bytes: 74 65 73 74>"
+  assert toString(
+    b"123456789123456789123456789123456789123456789123456789123456789123456789123456789123456789123456789"
+  )
+    == "<bytes: 31 32 33 34 35 36 37 38 39 31 32 33 34 35 36 37 38 39 31 32 33 34 35 36 37 38 39 31 32 33 34 35...>"
+  // Int64
+  assert toString(-9_000_000_000_000_000_000L) == "-9000000000000000000"
+  assert toString(-32L) == "-32"
+  assert toString(0L) == "0"
+  assert toString(32L) == "32"
+  assert toString(9_000_000_000_000_000_000L) == "9000000000000000000"
+  // Float64
+  assert toString(-32.5d) == "-32.5"
+  assert toString(-32.0d) == "-32.0"
+  assert toString(-0.0d) == "0.0"
+  assert toString(0.0d) == "0.0"
+  assert toString(32.0d) == "32.0"
+  assert toString(32.5d) == "32.5"
+  assert toString(-NaNd) == "NaN"
+  assert toString(NaNd) == "NaN"
+  assert toString(-Infinityd) == "-Infinity"
+  assert toString(Infinityd) == "Infinity"
+  // Rational
+  assert toString(1/2r) == "1/2"
+  assert toString(-1/2r) == "-1/2"
+  assert toString(20/80r) == "1/4"
+  assert toString(4/4r) == "1/1"
+  // BigInt
+  assert toString(-32t) == "-32"
+  assert toString(0t) == "0"
+  assert toString(32t) == "32"
+  assert toString(-9_000_000_000_000_000_000t) == "-9000000000000000000"
+  assert toString(9_000_000_000_000_000_000t) == "9000000000000000000"
+  // Int32
+  assert toString(-32l) == "-32"
+  assert toString(0l) == "0"
+  assert toString(32l) == "32"
+  // Float32
+  assert toString(-32.5f) == "-32.5"
+  assert toString(-32.0f) == "-32.0"
+  assert toString(-0.0f) == "0.0"
+  assert toString(0.0f) == "0.0"
+  assert toString(32.0f) == "32.0"
+  assert toString(32.5f) == "32.5"
+  assert toString(-NaNf) == "NaN"
+  assert toString(NaNf) == "NaN"
+  assert toString(-Infinityf) == "-Infinity"
+  assert toString(Infinityf) == "Infinity"
+  // Uint32
+  assert toString(0ul) == "0"
+  assert toString(32ul) == "32"
+  // Uint64
+  assert toString(0uL) == "0"
+  assert toString(32uL) == "32"
+}
 // TODO: Complex Heap Values -- nested, recursive, mixed, nested escaping char, string, '\'', '\t', etc...
 // Builtins
-// TODO: List
-// TODO: Range
-// TODO: Option
-// TODO: Result
-assert toString(box(1)) == "box(1)" // Box
+module Builtins {
+  // TODO: List
+  // TODO: Range
+  print(toString({ rangeStart: 1, rangeEnd: 2 }))
+  assert toString({ rangeStart: 1, rangeEnd: 2 })
+    == "{ rangeStart: 1, rangeEnd: 2 }"
+  // Option
+  assert toString(None) == "None"
+  assert toString(Some(1)) == "Some(1)"
+  // Result
+  assert toString(Ok(1)) == "Ok(1)"
+  assert toString(Err(2)) == "Err(2)"
+  // Box
+  assert toString(box(1)) == "box(1)"
+}

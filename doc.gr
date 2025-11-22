@@ -106,11 +106,125 @@
       the combined width to allow the engine to make constant-time decisions
       about line breaks.
 */
+@noPervasives
 module Doc
 
-from "string" include String
-from "buffer" include Buffer
-from "array" include Array
+from "runtime/unsafe/wasmI32" include WasmI32
+from "runtime/unsafe/memory" include Memory
+from "runtime/unsafe/offsets" include Offsets
+from "runtime/dataStructures" include DataStructures
+use DataStructures.{
+  allocateString,
+  allocateBytes,
+  newInt32,
+  untagSimpleNumber,
+}
+from "runtime/utf8" include Utf8
+use Utf8.{ isLeadingByte }
+
+primitive (||) = "@or"
+primitive throw = "@throw"
+primitive ignore = "@ignore"
+
+exception Impossible(String)
+
+module MiniInt32 {
+  use WasmI32.{ (+), (>) }
+  @unsafe
+  provide let getValue = val =>
+    WasmI32.load(WasmI32.fromGrain(val), Offsets._INT32_VALUE_OFFSET)
+  @unsafe
+  provide let fromValue = value => WasmI32.toGrain(newInt32(value)): Int32
+  @unsafe
+  provide let (+) = (a, b) => fromValue(getValue(a) + getValue(b))
+  @unsafe
+  provide let (>) = (a, b) => getValue(a) > getValue(b)
+}
+use MiniInt32.{ (+) }
+module MiniBuffer {
+  abstract record MiniBuffer {
+    mut data: Bytes,
+    mut pos: Int32,
+  }
+  @unsafe
+  provide let make = size =>
+    {
+      data: WasmI32.toGrain(allocateBytes(MiniInt32.getValue(size))): Bytes,
+      pos: 0l,
+    }
+  @unsafe
+  provide let addString = (str: String, buffer: MiniBuffer) => {
+    use WasmI32.{ (*), (+), (<) }
+    let stringPointer = WasmI32.fromGrain(str)
+    let stringSize = WasmI32.load(stringPointer, Offsets._STR_LEN_OFFSET)
+    let bufferSize = WasmI32.load(
+      WasmI32.fromGrain(buffer.data),
+      Offsets._BYTES_LEN_OFFSET
+    )
+    let bufferPosition = MiniInt32.getValue(buffer.pos)
+    // Grow Buffer if needed
+    let desiredSize = bufferPosition + stringSize
+    if (bufferSize < desiredSize) {
+      let mut newSize = bufferSize * 2n
+      while (newSize < desiredSize) newSize *= 2n
+      buffer.data = WasmI32.toGrain(allocateBytes(newSize)): Bytes
+    }
+    let bufferPointer = WasmI32.fromGrain(buffer.data)
+    let bufferSize = WasmI32.load(bufferPointer, Offsets._BYTES_LEN_OFFSET)
+    // Write String
+    Memory.copy(
+      bufferPointer + Offsets._BYTES_DATA_OFFSET + bufferPosition,
+      stringPointer + Offsets._STR_DATA_OFFSET,
+      stringSize
+    )
+    use MiniInt32.{ (+) }
+    buffer.pos += WasmI32.toGrain(newInt32(stringSize)): Int32
+    ignore(str)
+    ignore(buffer.data)
+  }
+  @unsafe
+  provide let toString = (buffer: MiniBuffer) => {
+    use WasmI32.{ (+) }
+    let src = WasmI32.fromGrain(buffer.data)
+    let size = MiniInt32.getValue(buffer.pos)
+    let dst = allocateString(size)
+    Memory.copy(
+      dst + Offsets._BYTES_DATA_OFFSET,
+      src + Offsets._BYTES_DATA_OFFSET,
+      size
+    )
+    ignore(buffer.data)
+    WasmI32.toGrain(dst): String
+  }
+}
+
+@unsafe
+let stringLength = (string: String) => {
+  use WasmI32.{ (+), (&), (!=), ltU as (<) }
+  let mut stringPtr = WasmI32.fromGrain(string)
+  let size = WasmI32.load(stringPtr, Offsets._STR_LEN_OFFSET)
+
+  let mut len = 0n
+  stringPtr += Offsets._STR_DATA_OFFSET
+  let end = stringPtr + size
+
+  while (stringPtr < end) {
+    let byte = WasmI32.load8U(stringPtr, 0n)
+    if (isLeadingByte(byte)) len += 1n
+    stringPtr += 1n
+  }
+  ignore(string)
+  WasmI32.toGrain(newInt32(len)): Int32
+}
+@unsafe
+let buildSpaceString = count => {
+  use WasmI32.{ (*), (+) }
+  let size = MiniInt32.getValue(count)
+  let ptr = allocateString(size)
+  Memory.fill(ptr + Offsets._STR_DATA_OFFSET, 32n, /* " " char code */
+    size * 4n) // TODO: Magic Offsets
+  WasmI32.toGrain(ptr): String
+}
 
 provide enum EOL {
   CRLF,
@@ -121,7 +235,7 @@ abstract enum rec LayoutNode {
   Empty,
   GroupBreaker,
   String{ value: String, width: Width },
-  Blank{ count: Number, },
+  Blank{ count: Int32, },
   BreakHint{ doc: LayoutNode, flatWidth: Width },
   Hardline{ phantom: Bool, },
   IfBroken{
@@ -131,7 +245,7 @@ abstract enum rec LayoutNode {
     breakingWidth: Width,
   },
   Indent{
-    count: Number,
+    count: Int32,
     doc: LayoutNode,
     hasGroupBreaker: Bool,
     flatWidth: Width,
@@ -157,27 +271,27 @@ and provide enum GroupType {
   FitAll,
 }
 and abstract enum Width {
-  WithBreak(Number),
-  WithoutBreak(Number),
+  WithBreak(Int32),
+  WithoutBreak(Int32),
 }
 
 let breakingWidth = doc => {
   match (doc) {
-    Empty | GroupBreaker => WithoutBreak(0),
+    Empty | GroupBreaker => WithoutBreak(0l),
     String{ width, _ } => width,
     Indent{ breakingWidth, _ } |
     Group{ breakingWidth, _ } |
     Concat{ breakingWidth, _ } |
     IfBroken{ breakingWidth, _ } => breakingWidth,
     Blank{ count } => WithoutBreak(count),
-    BreakHint{ _ } | Hardline{ phantom: false } => WithBreak(0),
-    Hardline{ phantom: true } => WithoutBreak(0),
+    BreakHint{ _ } | Hardline{ phantom: false } => WithBreak(0l),
+    Hardline{ phantom: true } => WithoutBreak(0l),
   }
 }
 
 let flatWidth = doc => {
   match (doc) {
-    Empty | GroupBreaker => WithoutBreak(0),
+    Empty | GroupBreaker => WithoutBreak(0l),
     String{ width, _ } => width,
     Indent{ flatWidth, _ } |
     Group{ flatWidth, _ } |
@@ -185,8 +299,8 @@ let flatWidth = doc => {
     IfBroken{ flatWidth, _ } |
     BreakHint{ flatWidth, _ } => flatWidth,
     Blank{ count } => WithoutBreak(count),
-    Hardline{ phantom: false } => WithBreak(0),
-    Hardline{ phantom: true } => WithoutBreak(0),
+    Hardline{ phantom: false } => WithBreak(0l),
+    Hardline{ phantom: true } => WithoutBreak(0l),
   }
 }
 
@@ -213,7 +327,7 @@ let widthValue = width => {
 
 provide let groupBreaker = GroupBreaker
 provide let string = s =>
-  String{ value: s, width: WithoutBreak(String.length(s)) }
+  String{ value: s, width: WithoutBreak(stringLength(s)) }
 provide let blank = c => Blank{ count: c }
 let _break = doc => BreakHint{ doc, flatWidth: flatWidth(doc) }
 provide let hardline = Hardline{ phantom: false }
@@ -225,7 +339,7 @@ provide let ifBroken = (breaking, flat) =>
     flatWidth: flatWidth(flat),
     breakingWidth: breakingWidth(breaking),
   }
-provide let indent = (count=2, doc) =>
+provide let indent = (count=2l, doc) =>
   Indent{
     count,
     doc,
@@ -242,6 +356,7 @@ provide let group = (printWidth=None, kind=Auto, doc) => {
 }
 
 provide let concat = (left, right) => {
+  use MiniInt32.{ (+) }
   let add = (left, right) => {
     match ((left, right)) {
       (WithBreak(_), _) => left,
@@ -266,9 +381,9 @@ provide let concat = (left, right) => {
 }
 provide let (++) = concat
 
-provide let breakableSpace = _break(blank(1))
+provide let breakableSpace = _break(blank(1l))
 provide let _break = _break(Empty)
-provide let space = blank(1)
+provide let space = blank(1l)
 provide let empty = Empty
 
 provide let comma = string(",")
@@ -280,7 +395,7 @@ provide let concatMap = (sep, lead, trail, f, l) => {
     [first, ..._] => {
       let rec concatMap = (acc, l) => {
         match (l) {
-          [] => fail "Impossible: empty list",
+          [] => throw Impossible("Impossible: empty list"),
           [ultimate] =>
             // one element list
             acc ++ f(final=true, ultimate) ++ trail(ultimate),
@@ -328,18 +443,18 @@ provide module Engine {
 
   record EngineGroup {
     mode: EngineMode,
-    mut globalIndent: Number,
-    mut localIndent: Number,
+    mut globalIndent: Int32,
+    mut localIndent: Int32,
     mut broken: Bool,
   }
 
   provide let print = (write, eol, lineWidth, doc) => {
     // The current column we're writing to
-    let column = box(0)
+    let mut column = 0l
     // Queue for indentation to prevent lines with just spaces
-    let writeQueue = box(None)
+    let mut writeQueue = None
     // Continuation for Fit mode calculations that depend on the size of the next node
-    let k = box(None)
+    let mut k = None
 
     let eol = match (eol) {
       CRLF => "\r\n",
@@ -347,19 +462,20 @@ provide module Engine {
     }
 
     let flushWriteQueue = () => {
-      match (unbox(writeQueue)) {
+      match (writeQueue) {
         Some(queued) => {
           write(queued)
-          writeQueue := None
+          writeQueue = None
         },
         None => void,
       }
     }
 
     let rec print = (group, doc) => {
-      match (unbox(k)) {
+      use MiniInt32.{ (+), (>) }
+      match (k) {
         Some(f) => {
-          k := None
+          k = None
           f(doc)
         },
         None => void,
@@ -370,30 +486,30 @@ provide module Engine {
         String{ value, width } => {
           flushWriteQueue()
           write(value)
-          column := unbox(column) + widthValue(width)
+          column += widthValue(width)
         },
         Blank{ count } => {
           flushWriteQueue()
-          write(String.repeat(count, " "))
-          column := unbox(column) + count
+          write(buildSpaceString(count))
+          column += count
         },
         BreakHint{ doc, flatWidth: width } => {
           let _break = () => {
             group.broken = true
             group.globalIndent = group.globalIndent + group.localIndent
-            group.localIndent = 0
+            group.localIndent = 0l
             write(eol)
-            writeQueue := Some(String.repeat(group.globalIndent, " "))
-            column := group.globalIndent
+            writeQueue = Some(buildSpaceString(group.globalIndent))
+            column = group.globalIndent
           }
           match (group.mode) {
             Flat => print(group=group, doc),
             Breaking => _break(),
             FitFlat => {
-              k := Some(nextDoc => {
+              k = Some(nextDoc => {
                 let nextWidth = widthValue(flatWidth(nextDoc))
                 let hintWidth = widthValue(width)
-                if (unbox(column) + hintWidth + nextWidth > lineWidth) {
+                if (column + hintWidth + nextWidth > lineWidth) {
                   _break()
                 } else {
                   print(group=group, doc)
@@ -401,10 +517,10 @@ provide module Engine {
               })
             },
             FitBreaking => {
-              k := Some(nextDoc => {
+              k = Some(nextDoc => {
                 let nextWidth = widthValue(breakingWidth(nextDoc))
                 let hintWidth = widthValue(width)
-                if (unbox(column) + hintWidth + nextWidth > lineWidth) {
+                if (column + hintWidth + nextWidth > lineWidth) {
                   _break()
                 } else {
                   print(group=group, doc)
@@ -416,10 +532,10 @@ provide module Engine {
         Hardline{ _ } => {
           group.broken = true
           group.globalIndent = group.globalIndent + group.localIndent
-          group.localIndent = 0
+          group.localIndent = 0l
           write(eol)
-          writeQueue := Some(String.repeat(group.globalIndent, " "))
-          column := group.globalIndent
+          writeQueue = Some(buildSpaceString(group.globalIndent))
+          column = group.globalIndent
         },
         IfBroken{ flat, breaking, _ } => {
           if (group.broken) {
@@ -440,7 +556,7 @@ provide module Engine {
           let width = widthValue(flatWidth)
           let mode = match (groupType) {
             _ when hasGroupBreaker(doc) => Breaking,
-            Auto when unbox(column) + width > lineWidth => Breaking,
+            Auto when column + width > lineWidth => Breaking,
             Auto => Flat,
             FitGroups => FitFlat,
             FitAll => FitBreaking,
@@ -449,7 +565,7 @@ provide module Engine {
           let group = {
             mode,
             globalIndent: group.globalIndent,
-            localIndent: 0,
+            localIndent: 0l,
             broken: hasGroupBreaker(doc),
           }
           print(group=group, doc)
@@ -461,14 +577,14 @@ provide module Engine {
       }
     }
 
-    let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
+    let group = { mode: Flat, globalIndent: 0l, localIndent: 0l, broken: false }
     print(group=group, doc)
   }
 
   provide let toString = (eol, lineWidth, doc) => {
-    let b = Buffer.make(2048)
-    let write = str => Buffer.addString(str, b)
+    let b = MiniBuffer.make(2048l)
+    let write = str => MiniBuffer.addString(str, b)
     print(write, eol, lineWidth, doc)
-    Buffer.toString(b)
+    MiniBuffer.toString(b)
   }
 }
