@@ -1,0 +1,18 @@
+# https://taskfile.dev
+version: '3'
+
+tasks:
+  default:
+    cmds:
+      - grain toString.test.gr
+  sizeTest:
+    cmds:
+      - bash sizeDifference.sh
+  format:
+    cmds:
+      - grain format . -o .
+  clean:
+    cmds:
+      - rm -f *.gro
+      - rm -f *.wasm
+      - rm -f *.wat

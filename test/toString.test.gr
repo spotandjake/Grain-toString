@@ -1,6 +1,6 @@
 module ToStringTest
 
-from "./toString.gr" include ToString
+from "../toString.gr" include ToString
 use ToString.{ toString }
 
 // Short Values

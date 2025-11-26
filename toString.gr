@@ -7,6 +7,17 @@ from "runtime/unsafe/wasmf32" include WasmF32
 from "runtime/unsafe/wasmf64" include WasmF64
 from "runtime/unsafe/memory" include Memory
 from "runtime/unsafe/offsets" include Offsets
+use Offsets.{
+  _BYTES_LEN_OFFSET,
+  _BYTES_DATA_OFFSET,
+  _STR_DATA_OFFSET,
+  _INT32_VALUE_OFFSET,
+  _INT64_VALUE_OFFSET,
+  _UINT32_VALUE_OFFSET,
+  _UINT64_VALUE_OFFSET,
+  _FLOAT32_VALUE_OFFSET,
+  _FLOAT64_VALUE_OFFSET,
+}
 from "runtime/bigint" include Bigint
 from "runtime/numberUtils" include NumberUtils
 from "runtime/numbers" include Numbers
@@ -25,8 +36,13 @@ use DataStructures.{
 }
 from "runtime/utf8" include Utf8
 use Utf8.{ usvEncodeLength, writeUtf8CodePoint }
-from "./grainValue.gr" include GrainValue
-from "./doc.gr" include Doc
+from "./libs/grainValue.gr" include GrainValue
+from "./libs/doc.gr" include Doc
+
+@unsafe
+let _RATIONAL_NUMERATOR_OFFSET = 8n
+@unsafe
+let _RATIONAL_DENOMINATOR_OFFSET = 12n
 
 primitive ignore = "@ignore"
 primitive (!) = "@not"
@@ -50,18 +66,17 @@ module Stringify {
   provide let string = (val: String) => Doc.string(val) // TODO: Escaping
   @unsafe
   provide let bytes = (val: Bytes) => {
-    // TODO: Is there a slightly safer way of doing this?
     use Doc.{ (++) }
     use WasmI32.{ (+), (-), (*), (<), (>), (==) }
     let ptr = WasmI32.fromGrain(val)
-    let len = WasmI32.load(ptr, Offsets._BYTES_LEN_OFFSET)
+    let len = WasmI32.load(ptr, _BYTES_LEN_OFFSET)
     let len = if (len > 32n) 32n else len // Limit to 32 bytes for display
 
     let hex = NumberUtils.get_HEX_DIGITS()
     let strLen = len * 3n - 1n // 2 hex digits + 1 space per byte
     let str = allocateString(strLen)
-    let bytesOffset = ptr + Offsets._BYTES_DATA_OFFSET
-    let strOffset = str + Offsets._STR_DATA_OFFSET
+    let bytesOffset = ptr + _BYTES_DATA_OFFSET
+    let strOffset = str + _STR_DATA_OFFSET
     Memory.fill(strOffset, 0x20n, strLen) // Fill with spaces
     for (let mut i = 0n; i < len; i += 1n) {
       let n = WasmI32.load8U(bytesOffset, i)
@@ -81,21 +96,25 @@ module Stringify {
         Doc.string(NumberUtils.itoa32(untagSimpleNumber(v), defaultRadix)),
       GrainValue.Int64Tag(v) => {
         let ptr = WasmI32.fromGrain(v)
-        let num = WasmI64.load(ptr, Offsets._INT64_VALUE_OFFSET)
+        let num = WasmI64.load(ptr, _INT64_VALUE_OFFSET)
         ignore(v)
         Doc.string(NumberUtils.itoa64(num, defaultRadix))
       },
       GrainValue.Float64Tag(v) => {
         let ptr = WasmI32.fromGrain(v)
-        let num = WasmF64.load(ptr, Offsets._FLOAT64_VALUE_OFFSET)
+        let num = WasmF64.load(ptr, _FLOAT64_VALUE_OFFSET)
         ignore(v)
         Doc.string(NumberUtils.dtoa(num))
       },
       GrainValue.RationalTag(v) => {
         use Doc.{ (++) }
         let ptr = WasmI32.fromGrain(v)
-        let numerator = Bigint.bigIntToString10(WasmI32.load(ptr, 8n)) // TODO: Magic Offset
-        let denominator = Bigint.bigIntToString10(WasmI32.load(ptr, 12n)) // TODO: Magic Offset
+        let numerator = Bigint.bigIntToString10(
+          WasmI32.load(ptr, _RATIONAL_NUMERATOR_OFFSET)
+        )
+        let denominator = Bigint.bigIntToString10(
+          WasmI32.load(ptr, _RATIONAL_DENOMINATOR_OFFSET)
+        )
         ignore(v)
         Doc.string(numerator) ++ Doc.string("/") ++ Doc.string(denominator)
       },
@@ -111,30 +130,28 @@ module Stringify {
   @unsafe
   provide let int32 = (val: Int32) => {
     let ptr = WasmI32.fromGrain(val)
-    let num = WasmI32.load(ptr, Offsets._INT32_VALUE_OFFSET)
+    let num = WasmI32.load(ptr, _INT32_VALUE_OFFSET)
     ignore(val)
     Doc.string(NumberUtils.itoa32(num, defaultRadix))
   }
   @unsafe
   provide let float32 = (val: Float32) => {
     let ptr = WasmI32.fromGrain(val)
-    let num = WasmF64.promoteF32(
-      WasmF32.load(ptr, Offsets._FLOAT32_VALUE_OFFSET)
-    )
+    let num = WasmF64.promoteF32(WasmF32.load(ptr, _FLOAT32_VALUE_OFFSET))
     ignore(val)
     Doc.string(NumberUtils.dtoa(num))
   }
   @unsafe
   provide let uint32 = (val: Uint32) => {
     let ptr = WasmI32.fromGrain(val)
-    let num = WasmI32.load(ptr, Offsets._UINT32_VALUE_OFFSET)
+    let num = WasmI32.load(ptr, _UINT32_VALUE_OFFSET)
     ignore(val)
     Doc.string(NumberUtils.utoa32(num, defaultRadix))
   }
   @unsafe
   provide let uint64 = (val: Uint64) => {
     let ptr = WasmI32.fromGrain(val)
-    let num = WasmI64.load(ptr, Offsets._UINT64_VALUE_OFFSET)
+    let num = WasmI64.load(ptr, _UINT64_VALUE_OFFSET)
     ignore(val)
     Doc.string(NumberUtils.utoa64(num, defaultRadix))
   }
@@ -157,7 +174,7 @@ module Stringify {
         let usv = untagChar(val)
         let byteCount = usvEncodeLength(usv)
         let string = allocateString(byteCount)
-        writeUtf8CodePoint(string + Offsets._STR_DATA_OFFSET, usv)
+        writeUtf8CodePoint(string + _STR_DATA_OFFSET, usv)
         WasmI32.toGrain(string): String
       },
     }

@@ -1,0 +1,15 @@
+# https://taskfile.dev
+version: '3'
+
+tasks:
+  format:
+    cmds:
+      - grain format . -o .
+  doc:
+    cmds:
+      - grain doc . -o .
+  clean:
+    cmds:
+      - rm -f *.gro
+      - rm -f *.wasm
+      - rm -f *.wat

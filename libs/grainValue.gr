@@ -13,6 +13,7 @@ module GrainValue
 from "runtime/unsafe/wasmi32" include WasmI32
 from "runtime/unsafe/tags" include Tags
 from "runtime/unsafe/offsets" include Offsets
+use Offsets.{ _STR_LEN_OFFSET, _STR_DATA_OFFSET }
 from "runtime/unsafe/memory" include Memory
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{ allocateString, allocateArray, untagSimpleNumber }
@@ -404,7 +405,7 @@ let rec getFieldNames = (data: List<StackTag<a>>, metaDataPtr: WasmI32) => {
       let fieldLength = WasmI32.load(metaDataPtr, 4n) // TODO: Magic Offset
       let fieldName = allocateString(fieldLength)
       Memory.copy(
-        fieldName + Offsets._STR_LEN_OFFSET,
+        fieldName + _STR_LEN_OFFSET,
         metaDataPtr + 4n, // TODO: Magic Offset
         fieldLength + 8n // TODO: Magic Offset
       )
@@ -511,7 +512,7 @@ provide let getADTData = (value: ADTValue<a>) => {
     let variantNameLength = WasmI32.load(metaDataPtr, 12n) // TODO: Magic Offset
     let variantName = allocateString(variantNameLength)
     Memory.copy(
-      variantName + Offsets._STR_DATA_OFFSET,
+      variantName + _STR_DATA_OFFSET,
       metaDataPtr + 16n, // TODO: Magic Offset
       variantNameLength
     )

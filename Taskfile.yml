@@ -1,0 +1,38 @@
+# https://taskfile.dev
+version: '3'
+
+includes:
+  libs: 
+    taskfile: ./libs/Taskfile.yml
+    dir: ./libs/
+  test:
+    taskfile: ./test/Taskfile.yml
+    dir: ./test/
+
+tasks:
+  default:
+    cmds:
+      - echo "Formatting"
+      - task: format
+      - echo "Generating docs"
+      - task: doc
+      - echo "Testing"
+      - task: test:default
+      - task: test:sizeTest
+    silent: true
+  format:
+    cmds:
+      - grain format toString.gr -o toString.gr
+      - task libs:format
+      - task test:format
+  doc:
+    cmds:
+      - grain doc toString.gr -o toString.md
+      - task libs:doc
+  clean:
+    cmds:
+      - rm -f *.gro
+      - rm -f *.wasm
+      - rm -f *.wat
+      - task libs:clean
+      - task test:clean

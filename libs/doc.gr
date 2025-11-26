@@ -112,6 +112,13 @@ module Doc
 from "runtime/unsafe/wasmI32" include WasmI32
 from "runtime/unsafe/memory" include Memory
 from "runtime/unsafe/offsets" include Offsets
+use Offsets.{
+  _INT32_VALUE_OFFSET,
+  _STR_LEN_OFFSET,
+  _STR_DATA_OFFSET,
+  _BYTES_LEN_OFFSET,
+  _BYTES_DATA_OFFSET,
+}
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
   allocateString,
@@ -132,7 +139,7 @@ module MiniInt32 {
   use WasmI32.{ (+), (>) }
   @unsafe
   provide let getValue = val =>
-    WasmI32.load(WasmI32.fromGrain(val), Offsets._INT32_VALUE_OFFSET)
+    WasmI32.load(WasmI32.fromGrain(val), _INT32_VALUE_OFFSET)
   @unsafe
   provide let fromValue = value => WasmI32.toGrain(newInt32(value)): Int32
   @unsafe
@@ -156,10 +163,10 @@ module MiniBuffer {
   provide let addString = (str: String, buffer: MiniBuffer) => {
     use WasmI32.{ (*), (+), (<) }
     let stringPointer = WasmI32.fromGrain(str)
-    let stringSize = WasmI32.load(stringPointer, Offsets._STR_LEN_OFFSET)
+    let stringSize = WasmI32.load(stringPointer, _STR_LEN_OFFSET)
     let bufferSize = WasmI32.load(
       WasmI32.fromGrain(buffer.data),
-      Offsets._BYTES_LEN_OFFSET
+      _BYTES_LEN_OFFSET
     )
     let bufferPosition = MiniInt32.getValue(buffer.pos)
     // Grow Buffer if needed
@@ -170,11 +177,11 @@ module MiniBuffer {
       buffer.data = WasmI32.toGrain(allocateBytes(newSize)): Bytes
     }
     let bufferPointer = WasmI32.fromGrain(buffer.data)
-    let bufferSize = WasmI32.load(bufferPointer, Offsets._BYTES_LEN_OFFSET)
+    let bufferSize = WasmI32.load(bufferPointer, _BYTES_LEN_OFFSET)
     // Write String
     Memory.copy(
-      bufferPointer + Offsets._BYTES_DATA_OFFSET + bufferPosition,
-      stringPointer + Offsets._STR_DATA_OFFSET,
+      bufferPointer + _BYTES_DATA_OFFSET + bufferPosition,
+      stringPointer + _STR_DATA_OFFSET,
       stringSize
     )
     use MiniInt32.{ (+) }
@@ -188,11 +195,7 @@ module MiniBuffer {
     let src = WasmI32.fromGrain(buffer.data)
     let size = MiniInt32.getValue(buffer.pos)
     let dst = allocateString(size)
-    Memory.copy(
-      dst + Offsets._BYTES_DATA_OFFSET,
-      src + Offsets._BYTES_DATA_OFFSET,
-      size
-    )
+    Memory.copy(dst + _BYTES_DATA_OFFSET, src + _BYTES_DATA_OFFSET, size)
     ignore(buffer.data)
     WasmI32.toGrain(dst): String
   }
@@ -202,10 +205,10 @@ module MiniBuffer {
 let stringLength = (string: String) => {
   use WasmI32.{ (+), (&), (!=), ltU as (<) }
   let mut stringPtr = WasmI32.fromGrain(string)
-  let size = WasmI32.load(stringPtr, Offsets._STR_LEN_OFFSET)
+  let size = WasmI32.load(stringPtr, _STR_LEN_OFFSET)
 
   let mut len = 0n
-  stringPtr += Offsets._STR_DATA_OFFSET
+  stringPtr += _STR_DATA_OFFSET
   let end = stringPtr + size
 
   while (stringPtr < end) {
@@ -221,8 +224,8 @@ let buildSpaceString = count => {
   use WasmI32.{ (*), (+) }
   let size = MiniInt32.getValue(count)
   let ptr = allocateString(size)
-  Memory.fill(ptr + Offsets._STR_DATA_OFFSET, 32n, /* " " char code */
-    size * 4n) // TODO: Magic Offsets
+  // 32n is ASCII code for space
+  Memory.fill(ptr + _STR_DATA_OFFSET, 32n, size * 4n) // TODO: Magic Offsets
   WasmI32.toGrain(ptr): String
 }
 
