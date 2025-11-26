@@ -1,3 +1,13 @@
+/*
+ * toString.gr
+ * Copyright (c) 2025 Jake Follest
+ *
+ * This file uses code from `libs/doc.gr`, which is licensed under the GPL.
+ * Your use of this file is therefore subject to the GPL license.
+ *
+ * Original contributions by Jake Follest are MIT licensed, but redistribution
+ * must comply with the GPL where the GPL code is used.
+ */
 @noPervasives
 module ToString
 
