@@ -129,6 +129,10 @@ use DataStructures.{
 from "runtime/utf8" include Utf8
 use Utf8.{ isLeadingByte }
 
+// Offsets
+@unsafe
+let _STR_ITEM_SIZE = 4n
+
 primitive (||) = "@or"
 primitive throw = "@throw"
 primitive ignore = "@ignore"
@@ -225,7 +229,7 @@ let buildSpaceString = count => {
   let size = MiniInt32.getValue(count)
   let ptr = allocateString(size)
   // 32n is ASCII code for space
-  Memory.fill(ptr + _STR_DATA_OFFSET, 32n, size * 4n) // TODO: Magic Offsets
+  Memory.fill(ptr + _STR_DATA_OFFSET, 32n, size * _STR_ITEM_SIZE)
   WasmI32.toGrain(ptr): String
 }
 

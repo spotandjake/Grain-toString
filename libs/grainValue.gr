@@ -47,7 +47,6 @@ let _RESULT_ID = untagSimpleNumber(builtinId("Result"))
 @unsafe
 let _RANGE_ID = untagSimpleNumber(builtinId("Range"))
 
-// TODO: Is there a better way to have completely abstract types?
 /** Represents a generic grain heap value. */
 abstract type HeapValue<a> = a
 /** Represents a generic grain short value. */
@@ -321,11 +320,11 @@ provide let getShortTag = (value: ShortValue<a>) => {
 provide let getTupleData = (value: TupleValue<a>) => {
   use WasmI32.{ (+), (-), (*), (==), (>=) }
   let ptr = WasmI32.fromGrain(value)
-  let len = WasmI32.load(ptr, 4n) // TODO: Magic Offset
+  let len = WasmI32.load(ptr, 4n)
   let mut vals = []
-  for (let mut i = len * 4n - 4n; i >= 0n; i -= 4n) { // TODO: Magic Offset
-    let fieldPtr = WasmI32.load(ptr + 8n, i) // TODO: Magic Offset
-    let fieldVal = WasmI32.toGrain(fieldPtr): a
+  for (let mut i = len * 4n - 4n; i >= 0n; i -= 4n) {
+    let fieldPtr = WasmI32.load(ptr + 8n, i)
+    let fieldVal = WasmI32.toGrain(fieldPtr): b
     vals = [getTag(fieldVal), ...vals]
   }
   ignore(value)
@@ -333,7 +332,6 @@ provide let getTupleData = (value: TupleValue<a>) => {
 }
 
 module TypeMetaData {
-  // TODO: Figure out how this works and if we can optimize it, or make it safer
   use WasmI32.{ remS as (%), (+), (<<), (<), (>>), (==) }
   // NOTE: This code is taken directly from the grain runtime runtime/string.gr
   /*
@@ -392,12 +390,12 @@ module TypeMetaData {
     let fieldArray = allocateArray(arity)
     let mut fieldOffset = 0n
     for (let mut i = 0n; i < arity; i += 1n) {
-      let fieldLength = WasmI32.load(metaDataPtr + fieldOffset, 4n) // TODO: Magic Offset
+      let fieldLength = WasmI32.load(metaDataPtr + fieldOffset, 4n)
       let fieldName = allocateString(fieldLength)
       Memory.incRef(fieldName)
-      Memory.copy(fieldName + 8n, metaDataPtr + fieldOffset + 8n, fieldLength) // TODO: Magic Offset
-      WasmI32.store(fieldArray + 8n, fieldName, i * 4n) // TODO: Magic Offset
-      fieldOffset += WasmI32.load(metaDataPtr, fieldOffset) // TODO: Magic Offset
+      Memory.copy(fieldName + 8n, metaDataPtr + fieldOffset + 8n, fieldLength)
+      WasmI32.store(fieldArray + 8n, fieldName, i * 4n)
+      fieldOffset += WasmI32.load(metaDataPtr, fieldOffset)
     }
     fieldArray
   }
@@ -410,13 +408,13 @@ let rec getFieldNames = (data: List<StackTag<a>>, metaDataPtr: WasmI32) => {
     [] => [],
     [item, ...tail] => {
       // Get field name
-      let blockSize = WasmI32.load(metaDataPtr, 0n) // TODO: Magic Offset
-      let fieldLength = WasmI32.load(metaDataPtr, 4n) // TODO: Magic Offset
+      let blockSize = WasmI32.load(metaDataPtr, 0n)
+      let fieldLength = WasmI32.load(metaDataPtr, 4n)
       let fieldName = allocateString(fieldLength)
       Memory.copy(
         fieldName + _STR_LEN_OFFSET,
-        metaDataPtr + 4n, // TODO: Magic Offset
-        fieldLength + 8n // TODO: Magic Offset
+        metaDataPtr + 4n,
+        fieldLength + 8n
       )
       let fieldName = WasmI32.toGrain(fieldName): String
       [(fieldName, item), ...getFieldNames(tail, metaDataPtr + blockSize)]
@@ -437,10 +435,10 @@ let rec zipList = (list1, list2) => {
 provide let getRecordData = (value: RecordValue<a>) => {
   use WasmI32.{ (+), (-), (*), (>=), (>), (==), (>>) }
   let ptr = WasmI32.fromGrain(value)
-  let arity = WasmI32.load(ptr, 12n) * 4n // TODO: Magic Offset
+  let arity = WasmI32.load(ptr, 12n) * 4n
   let mut vals = []
-  for (let mut i = arity; i > 0n; i -= 4n) { // TODO: Magic Offset
-    let fieldPtr = WasmI32.load(ptr, 12n + i) // TODO: Magic Offset
+  for (let mut i = arity; i > 0n; i -= 4n) {
+    let fieldPtr = WasmI32.load(ptr, 12n + i)
     let fieldVal = WasmI32.toGrain(fieldPtr): a
     vals = [getTag(fieldVal), ...vals]
   }
@@ -448,14 +446,14 @@ provide let getRecordData = (value: RecordValue<a>) => {
   let metaDataPtr = TypeMetaData.getRecordMetadata(ptr)
   if (metaDataPtr == -1n) {
     // Could be built-in
-    let typeId = WasmI32.load(ptr, 8n) >> 1n // TODO: Magic Offset
+    let typeId = WasmI32.load(ptr, 8n) >> 1n
     if (typeId == _RANGE_ID) {
       Some(zipList(["rangeStart", "rangeEnd"], vals))
     } else {
       None
     }
   } else {
-    Some(getFieldNames(vals, metaDataPtr + 4n)) // TODO: Magic Offset
+    Some(getFieldNames(vals, metaDataPtr + 4n))
   }
 }
 
@@ -469,7 +467,7 @@ provide enum VariantType<a> {
 provide let isListADT = (value: ADTValue<a>) => {
   use WasmI32.{ (==), (>>) }
   let ptr = WasmI32.fromGrain(value)
-  let typeId = WasmI32.load(ptr, 8n) >> 1n // TODO: Magic Offset
+  let typeId = WasmI32.load(ptr, 8n) >> 1n
   typeId == _LIST_ID
 }
 
@@ -477,7 +475,6 @@ provide let isListADT = (value: ADTValue<a>) => {
 provide let getADTData = (value: ADTValue<a>) => {
   use WasmI32.{ (+), (-), (*), (==), (>=), (<) }
   let ptr = WasmI32.fromGrain(value)
-  // TODO: Magic offsets
   let typeId = untagSimpleNumber(WasmI32.toGrain(WasmI32.load(ptr, 8n)): Number)
   let variantId = untagSimpleNumber(
     WasmI32.toGrain(WasmI32.load(ptr, 12n)): Number
@@ -518,16 +515,16 @@ provide let getADTData = (value: ADTValue<a>) => {
     })
   } else {
     // Get the variant name
-    let variantNameLength = WasmI32.load(metaDataPtr, 12n) // TODO: Magic Offset
+    let variantNameLength = WasmI32.load(metaDataPtr, 12n)
     let variantName = allocateString(variantNameLength)
     Memory.copy(
       variantName + _STR_DATA_OFFSET,
-      metaDataPtr + 16n, // TODO: Magic Offset
+      metaDataPtr + 16n,
       variantNameLength
     )
     let variantName = WasmI32.toGrain(variantName): String
     // Get the variant field names
-    let recordFieldDataOffset = WasmI32.load(metaDataPtr, 4n) // TODO: Magic Offset
+    let recordFieldDataOffset = WasmI32.load(metaDataPtr, 4n)
     // Return Empty Variant
     if (arity == 0n) {
       (Some(variantName), EmptyVariant)

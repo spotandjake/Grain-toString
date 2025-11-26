@@ -64,7 +64,6 @@ module Stringify {
   // Settings
   @unsafe
   let defaultRadix = 10n // The default radix for numbers
-  // TODO: Maybe play around with experimental color and indentation setting support????
   abstract record StringifyState<a> {
     topLevel: Bool,
     cycleStack: List<GrainValue.HeapValue<a>>,
