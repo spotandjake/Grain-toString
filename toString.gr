@@ -30,12 +30,11 @@ use Offsets.{
 }
 from "runtime/bigint" include Bigint
 from "runtime/numberUtils" include NumberUtils
-from "runtime/numbers" include Numbers
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
   allocateString,
-  allocateArray,
   // Tagging
+  tagSimpleNumber,
   untagSimpleNumber,
   // Short Values
   untagChar,
@@ -291,11 +290,12 @@ module Stringify {
   and array = (val: Array<a>, state) => {
     let state = { ...state, topLevel: false }
     use Doc.{ (++) }
-    use Numbers.{ (>=), (-) }
+    use WasmI32.{ (>=), (-) }
     let mut vals = []
-    for (let mut i = arrayLength(val) - 1; i >= 0; i -= 1) {
+    let len = untagSimpleNumber(arrayLength(val))
+    for (let mut i = len - 1n; i >= 0n; i -= 1n) {
       // NOTE: We use `magic` here to prevent unifying the param
-      vals = [value(magic(val[i]): c, state), ...vals]
+      vals = [value(magic(val[tagSimpleNumber(i)]): c, state), ...vals]
     }
     Doc.arrayBrackets(
       Doc.indent(
@@ -343,11 +343,7 @@ module Stringify {
     )
   }
   and _record = (val: GrainValue.RecordValue<a>, state) => {
-    let vals = GrainValue.getRecordData(val)
-    match (vals) {
-      Some(vals) => _recordHelp(vals, state),
-      None => Doc.string("<record value>"),
-    }
+    _recordHelp(GrainValue.getRecordData(val), state)
   }
   and list = (val: List<a>, state) => {
     use Doc.{ (++) }
@@ -370,14 +366,11 @@ module Stringify {
   }
   and adt = (val: GrainValue.ADTValue<a>, state) => {
     use Doc.{ (++) }
-    let (name, variantData) = GrainValue.getADTData(val)
-    if (GrainValue.isListADT(val)) {
+    let (name, variantData) = GrainValue.getVariantData(val)
+    if (GrainValue.isListVariant(val)) {
       list(magic(val): List<a>, { ...state, topLevel: false })
     } else {
-      match (name) {
-        Some(name) => Doc.string(name),
-        None => Doc.string("<enum value>"),
-      } ++ match (variantData) {
+      Doc.string(name) ++ match (variantData) {
         GrainValue.TupleVariant(vals) =>
           tupleHelp(vals, true, { ...state, topLevel: false }),
         GrainValue.RecordVariant(vals) =>
@@ -392,21 +385,13 @@ module Stringify {
       ShortTag(v) => shortValueToString(v, state),
       NumberTag(v) => number(v),
       ConstantTag(v) => constantValueToString(v),
-      ReservedTag(_) => Doc.string("<unknown value>"),
+      UnknownTag => Doc.string("<unknown value>"),
     }
   }
-  and value = (val: a, state) => {
-    match (GrainValue.getTag(val)) {
-      HeapTag(v) => heapValueToString(v, state),
-      ShortTag(v) => shortValueToString(v, state),
-      NumberTag(v) => number(v),
-      ConstantTag(v) => constantValueToString(v),
-      ReservedTag(_) => Doc.string("<unknown value>"),
-    }
-  }
+  and value = (val: a, state) => taggedValue(GrainValue.getTag(val), state)
 
   provide { value }
 }
 
 provide let toString = (val: a) =>
-  Doc.Engine.toString(LF, 80l, Stringify.value(val, Stringify.emptyState))
+  Doc.Engine.toString(LF, 80, Stringify.value(val, Stringify.emptyState))

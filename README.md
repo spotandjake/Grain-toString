@@ -19,7 +19,7 @@ This library helps to abstract away a lot of the unsafe memory operations needed
 
 ## Size
 
-As the goal is to include this in the standard library it is critical that we keep the bundle size of this library low, hence why regular stdlib libraries have been replaced where possible with smaller and purpose built alternatives such as `MiniBuffer` and `Int32`. Currently we are `2.5x` larger on our smallest `Hello World` program and I think we can get that within `1.5x` with some more work, before moving this work into the runtime It would be nice to have a conversation about the future of `grainValue` and the purpose of `doc.gr` as we could make it more purpose built or we could keep it generic and use it for other libraries such as `json`, `yaml`, `markdown` and other stdlib libraries.
+As the goal is to include this in the standard library it is critical that we keep the bundle size of this library low, hence why regular stdlib libraries have been replaced where possible with smaller and purpose built alternatives such as `MiniBuffer`. Currently we are `2x` larger on our smallest `Hello World` program and I think we can get that within `1.5x` with some more work, before moving this work into the runtime It would be nice to have a conversation about the future of `grainValue` and the purpose of `doc.gr` as we could make it more purpose built or we could keep it generic and use it for other libraries such as `json`, `yaml`, `markdown` and other stdlib libraries.
 
 
 ## Still To Be Done

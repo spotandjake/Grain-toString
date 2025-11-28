@@ -99,7 +99,7 @@ enum StackTag<a> {
   NumberTag(Number),
   HeapTag(HeapValue<a>),
   ShortTag(ShortValue<a>),
-  ReservedTag(UnknownValue<a>),
+  UnknownTag,
   ConstantTag(ConstantValue<a>),
 }
 ```
@@ -129,7 +129,7 @@ ShortTag(ShortValue<a>)
 short value - 0b01x
 
 ```grain
-ReservedTag(UnknownValue<a>)
+UnknownTag
 ```
 
 reserved tag - 0b10x
@@ -228,6 +228,30 @@ enum VariantType<a> {
   RecordVariant(List<(String, StackTag<a>)>),
 }
 ```
+
+Represents the variant's field data types.
+
+Note: The `a` is `forall a`, meaning we never want to unify it.
+
+Variants:
+
+```grain
+EmptyVariant
+```
+
+A variant with no attached data.
+
+```grain
+TupleVariant(List<StackTag<a>>)
+```
+
+A variant with tuple data attached.
+
+```grain
+RecordVariant(List<(String, StackTag<a>)>)
+```
+
+A variant with record data attached.
 
 ## Values
 
@@ -348,18 +372,60 @@ Returns:
 ### GrainValue.**getRecordData**
 
 ```grain
-getRecordData: (value: RecordValue<a>) => Option<List<(String, StackTag<b>)>>
+getRecordData: (record_: RecordValue<a>) => List<(String, StackTag<b>)>
 ```
 
-### GrainValue.**isListADT**
+Provides the record's tagged field data.
+
+Parameters:
+
+| param     | type             | description                                  |
+| --------- | ---------------- | -------------------------------------------- |
+| `record_` | `RecordValue<a>` | The tagged record value to extract data from |
+
+Returns:
+
+| type                          | description                                               |
+| ----------------------------- | --------------------------------------------------------- |
+| `List<(String, StackTag<b>)>` | An associated list of field names and their tagged values |
+
+### GrainValue.**getVariantData**
 
 ```grain
-isListADT: (value: ADTValue<a>) => Bool
+getVariantData: (variant: ADTValue<a>) => (String, VariantType<b>)
 ```
 
-### GrainValue.**getADTData**
+Provides the variant's tagged field data.
+
+Parameters:
+
+| param     | type          | description                                   |
+| --------- | ------------- | --------------------------------------------- |
+| `variant` | `ADTValue<a>` | The tagged variant value to extract data from |
+
+Returns:
+
+| type                       | description                            |
+| -------------------------- | -------------------------------------- |
+| `(String, VariantType<b>)` | The name and field data of the variant |
+
+### GrainValue.**isListVariant**
 
 ```grain
-getADTData: (value: ADTValue<a>) => (Option<String>, VariantType<b>)
+isListVariant: (value: ADTValue<a>) => Bool
 ```
+
+Checks if the given ADT value is a List variant.
+
+Parameters:
+
+| param   | type          | description             |
+| ------- | ------------- | ----------------------- |
+| `value` | `ADTValue<a>` | The ADT value to check. |
+
+Returns:
+
+| type   | description                                                   |
+| ------ | ------------------------------------------------------------- |
+| `Bool` | `true` if the ADT value is a List variant, `false` otherwise. |
 

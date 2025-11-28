@@ -1,0 +1,50 @@
+// NOTE: This code is taken directly from the grain runtime runtime/string.gr
+/*
+ * MIT License
+ * Copyright (c) 2017-2025 Oscar Spencer <oscar@grain-lang.org>
+ * and Philip Blair <philip@grain-lang.org>
+ */
+@noPervasives
+module Print
+
+from "runtime/unsafe/wasmi32" include WasmI32
+from "runtime/unsafe/memory" include Memory
+from "runtime/string" include String
+
+foreign wasm fd_write:
+  (WasmI32, WasmI32, WasmI32, WasmI32) => WasmI32 from "wasi_snapshot_preview1"
+
+primitive ignore = "@ignore"
+
+/**
+ * Prints the given operand to the console. Works for any type. Internally, calls `toString`
+ * on the operand, so a better representation of data type will be printed if those types
+ * are provided from the module.
+ *
+ * @param value: The operand
+ * @param suffix: The string to print after the argument
+ *
+ * @since v0.1.0
+ * @history v0.6.0: Added support for custom suffixes
+ */
+@unsafe
+provide let print = (value: String, suffix="\n") => {
+  use WasmI32.{ (+) }
+  // First convert the value to string, if it isn't one already.
+  let valuePtr = WasmI32.fromGrain(value)
+  let combined = String.concat(value, suffix)
+  let ptr = WasmI32.fromGrain(combined)
+  // iov: [<ptr to string> <nbytes of string>]
+  // buf: <iov> <written>
+  // fd_write(STDOUT (1), iov, len(iov), written)
+  let buf = Memory.malloc(20n)
+  let iov = buf
+  let written = buf + 16n
+  WasmI32.store(iov, ptr + 8n, 0n)
+  WasmI32.store(iov, WasmI32.load(ptr, 4n), 4n)
+  fd_write(1n, iov, 1n, written)
+  Memory.free(buf)
+  ignore(value)
+  ignore(suffix)
+  void
+}

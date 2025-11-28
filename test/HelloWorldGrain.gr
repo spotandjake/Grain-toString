@@ -1,3 +1,8 @@
+@noPervasives
 module SmallProgram
 
-print(toString("Hello World!"))
+from "runtime/string" include String
+from "./print.gr" include Print
+use Print.{ print }
+
+print(String.toString("Hello World!"))

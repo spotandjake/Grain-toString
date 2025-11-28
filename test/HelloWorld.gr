@@ -1,6 +1,9 @@
+@noPervasives
 module SmallProgram
 
 from "../toString.gr" include ToString
 use ToString.{ toString }
+from "./print.gr" include Print
+use Print.{ print }
 
 print(toString("Hello World!"))

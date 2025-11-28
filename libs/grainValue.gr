@@ -20,12 +20,38 @@
 module GrainValue
 
 from "runtime/unsafe/wasmi32" include WasmI32
+use WasmI32.{
+  (+),
+  (-),
+  (*),
+  remS as (%),
+  (&),
+  (<<),
+  (==),
+  (!=),
+  (>=),
+  (<),
+  (>),
+}
 from "runtime/unsafe/tags" include Tags
 from "runtime/unsafe/offsets" include Offsets
 use Offsets.{ _STR_LEN_OFFSET, _STR_DATA_OFFSET }
 from "runtime/unsafe/memory" include Memory
 from "runtime/dataStructures" include DataStructures
-use DataStructures.{ allocateString, allocateArray, untagSimpleNumber }
+use DataStructures.{
+  allocateString,
+  allocateArray,
+  untagSimpleNumber,
+  tagSimpleNumber,
+}
+
+exception Impossible(String)
+
+primitive arrayLength = "@array.length"
+primitive magic = "@magic"
+primitive builtinId = "@builtin.id"
+primitive ignore = "@ignore"
+primitive throw = "@throw"
 
 @unsafe
 let _ADT_ARITY_OFFSET = 16n
@@ -33,10 +59,6 @@ let _ADT_ARITY_OFFSET = 16n
 let _ADT_DATA_OFFSET = 20n
 @unsafe
 let _ADT_ITEM_SIZE = 4n
-
-primitive magic = "@magic"
-primitive builtinId = "@builtin.id"
-primitive ignore = "@ignore"
 
 @unsafe
 let _LIST_ID = untagSimpleNumber(builtinId("List"))
@@ -89,7 +111,7 @@ provide enum StackTag<a> {
   /** short value - 0b01x */
   ShortTag(ShortValue<a>),
   /** reserved tag - 0b10x */
-  ReservedTag(UnknownValue<a>),
+  UnknownTag,
   /** constant tag - 0b11x */
   ConstantTag(ConstantValue<a>),
 }
@@ -138,25 +160,21 @@ provide enum ShortTag {
 // Stack tagging
 @unsafe
 provide let isSimpleNumberValue = a => {
-  use WasmI32.{ (&), (==) }
   (WasmI32.fromGrain(a) & Tags._GRAIN_NUMBER_TAG_MASK)
     == Tags._GRAIN_NUMBER_TAG_TYPE
 }
 @unsafe
 provide let isHeapValue = a => {
-  use WasmI32.{ (&), (==) }
   (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_TAG_MASK)
     == Tags._GRAIN_GENERIC_HEAP_TAG_TYPE
 }
 @unsafe
 let isConstantValue = a => {
-  use WasmI32.{ (&), (==) }
   (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_TAG_MASK)
     == Tags._GRAIN_CONST_TAG_TYPE
 }
 @unsafe
 let isShortValue = a => {
-  use WasmI32.{ (&), (==) }
   (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_TAG_MASK)
     == Tags._GRAIN_SHORTVAL_TAG_TYPE
 }
@@ -172,13 +190,16 @@ let isShortValue = a => {
  */
 @unsafe
 provide let getTag = (value: a) => {
-  match (value) {
-    _ when isSimpleNumberValue(value) => NumberTag(magic(value): Number),
-    _ when isHeapValue(value) => HeapTag(magic(value): HeapValue<b>),
-    _ when isShortValue(value) => ShortTag(magic(value): ShortValue<b>),
-    _ when isConstantValue(value) =>
-      ConstantTag(magic(value): ConstantValue<b>),
-    _ => ReservedTag(magic(value): UnknownValue<b>),
+  if (isSimpleNumberValue(value)) {
+    NumberTag(magic(value): Number)
+  } else if (isHeapValue(value)) {
+    HeapTag(magic(value): HeapValue<b>)
+  } else if (isShortValue(value)) {
+    ShortTag(magic(value): ShortValue<b>)
+  } else if (isConstantValue(value)) {
+    ConstantTag(magic(value): ConstantValue<b>)
+  } else {
+    UnknownTag
   }
 }
 
@@ -193,35 +214,36 @@ provide let getTag = (value: a) => {
  */
 @unsafe
 provide let getHeapTag = (value: HeapValue<a>) => {
-  use WasmI32.{ (==) }
   let ptr = WasmI32.fromGrain(value)
   let tag = WasmI32.load(ptr, 0n)
-  let tagged = match (tag) {
-    _ when tag == Tags._GRAIN_TUPLE_HEAP_TAG =>
-      TupleTag(magic(value): TupleValue<b>),
-    _ when tag == Tags._GRAIN_ARRAY_HEAP_TAG =>
-      ArrayTag(magic(value): Array<b>),
-    _ when tag == Tags._GRAIN_RECORD_HEAP_TAG =>
-      RecordTag(magic(value): RecordValue<b>),
-    _ when tag == Tags._GRAIN_ADT_HEAP_TAG => ADTTag(magic(value): ADTValue<b>),
-    _ when tag == Tags._GRAIN_LAMBDA_HEAP_TAG =>
-      ClosureTag(magic(value): LambdaValue<b>),
-    _ when tag == Tags._GRAIN_STRING_HEAP_TAG =>
-      StringTag(magic(value): String),
-    _ when tag == Tags._GRAIN_BYTES_HEAP_TAG => BytesTag(magic(value): Bytes),
-    _ when tag == Tags._GRAIN_BOXED_NUM_HEAP_TAG =>
-      BoxedNumberTag(magic(value): Number),
-    _ when tag == Tags._GRAIN_INT32_HEAP_TAG => Int32Tag(magic(value): Int32),
-    _ when tag == Tags._GRAIN_FLOAT32_HEAP_TAG =>
-      Float32Tag(magic(value): Float32),
-    _ when tag == Tags._GRAIN_UINT32_HEAP_TAG =>
-      Uint32Tag(magic(value): Uint32),
-    _ when tag == Tags._GRAIN_UINT64_HEAP_TAG =>
-      Uint64Tag(magic(value): Uint64),
-    _ => UnknownTag,
-  }
   ignore(value)
-  return tagged
+  if (tag == Tags._GRAIN_TUPLE_HEAP_TAG) {
+    TupleTag(magic(value): TupleValue<b>)
+  } else if (tag == Tags._GRAIN_ARRAY_HEAP_TAG) {
+    ArrayTag(magic(value): Array<b>)
+  } else if (tag == Tags._GRAIN_RECORD_HEAP_TAG) {
+    RecordTag(magic(value): RecordValue<b>)
+  } else if (tag == Tags._GRAIN_ADT_HEAP_TAG) {
+    ADTTag(magic(value): ADTValue<b>)
+  } else if (tag == Tags._GRAIN_LAMBDA_HEAP_TAG) {
+    ClosureTag(magic(value): LambdaValue<b>)
+  } else if (tag == Tags._GRAIN_STRING_HEAP_TAG) {
+    StringTag(magic(value): String)
+  } else if (tag == Tags._GRAIN_BYTES_HEAP_TAG) {
+    BytesTag(magic(value): Bytes)
+  } else if (tag == Tags._GRAIN_BOXED_NUM_HEAP_TAG) {
+    BoxedNumberTag(magic(value): Number)
+  } else if (tag == Tags._GRAIN_INT32_HEAP_TAG) {
+    Int32Tag(magic(value): Int32)
+  } else if (tag == Tags._GRAIN_FLOAT32_HEAP_TAG) {
+    Float32Tag(magic(value): Float32)
+  } else if (tag == Tags._GRAIN_UINT32_HEAP_TAG) {
+    Uint32Tag(magic(value): Uint32)
+  } else if (tag == Tags._GRAIN_UINT64_HEAP_TAG) {
+    Uint64Tag(magic(value): Uint64)
+  } else {
+    UnknownTag
+  }
 }
 
 /**
@@ -233,56 +255,49 @@ provide let getHeapTag = (value: HeapValue<a>) => {
  */
 @unsafe
 provide let getNumberTag = (value: Number) => {
-  use WasmI32.{ (==) }
   if (isSimpleNumberValue(value)) {
     SimpleNumberTag(magic(value): Number)
   } else {
     let ptr = WasmI32.fromGrain(value)
     let tag = WasmI32.load(ptr, 4n)
-    let tagged = match (tag) {
-      _ when tag == Tags._GRAIN_INT64_BOXED_NUM_TAG =>
-        Int64Tag(magic(value): Int64),
-      _ when tag == Tags._GRAIN_FLOAT64_BOXED_NUM_TAG =>
-        Float64Tag(magic(value): Float64),
-      _ when tag == Tags._GRAIN_RATIONAL_BOXED_NUM_TAG =>
-        RationalTag(magic(value): Rational),
-      _ when tag == Tags._GRAIN_BIGINT_BOXED_NUM_TAG =>
-        BigIntTag(magic(value): BigInt),
-      _ => UnknownNumberTag,
-    }
     ignore(value)
-    tagged
+    if (tag == Tags._GRAIN_INT64_BOXED_NUM_TAG) {
+      Int64Tag(magic(value): Int64)
+    } else if (tag == Tags._GRAIN_FLOAT64_BOXED_NUM_TAG) {
+      Float64Tag(magic(value): Float64)
+    } else if (tag == Tags._GRAIN_RATIONAL_BOXED_NUM_TAG) {
+      RationalTag(magic(value): Rational)
+    } else if (tag == Tags._GRAIN_BIGINT_BOXED_NUM_TAG) {
+      BigIntTag(magic(value): BigInt)
+    } else {
+      UnknownNumberTag
+    }
   }
 }
 
 // Short tagging
 @unsafe
 let isChar = a => {
-  use WasmI32.{ (&), (==) }
   (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
     == Tags._GRAIN_CHAR_SHORTVAL_TAG
 }
 @unsafe
 let isInt8 = a => {
-  use WasmI32.{ (&), (==) }
   (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
     == Tags._GRAIN_INT8_TAG_MASK
 }
 @unsafe
 let isInt16 = a => {
-  use WasmI32.{ (&), (==) }
   (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
     == Tags._GRAIN_INT16_TAG_MASK
 }
 @unsafe
 let isUInt8 = a => {
-  use WasmI32.{ (&), (==) }
   (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
     == Tags._GRAIN_UINT8_TAG_MASK
 }
 @unsafe
 let isUInt16 = a => {
-  use WasmI32.{ (&), (==) }
   (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
     == Tags._GRAIN_UINT16_TAG_MASK
 }
@@ -298,13 +313,18 @@ let isUInt16 = a => {
  */
 @unsafe
 provide let getShortTag = (value: ShortValue<a>) => {
-  match (value) {
-    _ when isChar(value) => CharTag(magic(value): Char),
-    _ when isInt8(value) => Int8Tag(magic(value): Int8),
-    _ when isInt16(value) => Int16Tag(magic(value): Int16),
-    _ when isUInt8(value) => Uint8Tag(magic(value): Uint8),
-    _ when isUInt16(value) => Uint16Tag(magic(value): Uint16),
-    _ => UnknownShortTag,
+  if (isChar(value)) {
+    CharTag(magic(value): Char)
+  } else if (isInt8(value)) {
+    Int8Tag(magic(value): Int8)
+  } else if (isInt16(value)) {
+    Int16Tag(magic(value): Int16)
+  } else if (isUInt8(value)) {
+    Uint8Tag(magic(value): Uint8)
+  } else if (isUInt16(value)) {
+    Uint16Tag(magic(value): Uint16)
+  } else {
+    UnknownShortTag
   }
 }
 
@@ -318,7 +338,6 @@ provide let getShortTag = (value: ShortValue<a>) => {
  */
 @unsafe
 provide let getTupleData = (value: TupleValue<a>) => {
-  use WasmI32.{ (+), (-), (*), (==), (>=) }
   let ptr = WasmI32.fromGrain(value)
   let len = WasmI32.load(ptr, 4n)
   let mut vals = []
@@ -332,212 +351,320 @@ provide let getTupleData = (value: TupleValue<a>) => {
 }
 
 module TypeMetaData {
-  use WasmI32.{ remS as (%), (+), (<<), (<), (>>), (==) }
-  // NOTE: This code is taken directly from the grain runtime runtime/string.gr
-  /*
-   * MIT License
-   * Copyright (c) 2017-2025 Oscar Spencer <oscar@grain-lang.org> and Philip Blair <philip@grain-lang.org>
-   */
   @unsafe
   primitive typeMetadata = "@heap.type_metadata"
 
+  /**
+   * Finds the type metadata block for a given type hash.
+   *
+   * @param typeHash: The type hash to find metadata for
+   *
+   * @returns Pointer to the type metadata block, or -1n if not found
+   */
   @unsafe
-  let findTypeMetadata = typeHash => {
-    let typeMetadata = typeMetadata()
+  provide let findTypeMetadata = typeHash => {
+    // Get the pointer to the type metadata table
+    let mut typeMetadata = typeMetadata()
     let numBuckets = WasmI32.load(typeMetadata, 0n)
-    let hashHash = typeHash % numBuckets
-    // First 8 bytes of metadata are for table size
-    let bucketPtr = typeMetadata + 8n + (hashHash << 3n) // 8 bytes/bucket
-    let bucketDataOffset = WasmI32.load(bucketPtr, 0n)
+    // Locate the block
+    let bucketHash = (typeHash % numBuckets) << 3n // 8 bytes per entry
+    let bucketPtr = typeMetadata + 8n + bucketHash // First 8 bytes of metadata are for table size
+    // Locate the bucket
+    let bucketOffset = WasmI32.load(bucketPtr, 0n)
     let bucketSize = WasmI32.load(bucketPtr, 4n)
-    let beginDataPtr = typeMetadata + bucketDataOffset
-    let endDataPtr = beginDataPtr + (bucketSize << 3n)
-    for (let mut ptr = beginDataPtr; ptr < endDataPtr; ptr += 8n) {
-      if (WasmI32.load(ptr, 0n) == typeHash) {
-        return typeMetadata + WasmI32.load(ptr, 4n)
+    // Scan the bucket entries for matching type hash
+    let startPtr = typeMetadata + bucketOffset
+    let endPtr = startPtr + (bucketSize << 3n) // 8 bytes per entry
+    for (let mut blockPtr = startPtr; blockPtr < endPtr; blockPtr += 8n) {
+      let blockHash = WasmI32.load(blockPtr, 0n)
+      if (blockHash == typeHash) {
+        return typeMetadata + WasmI32.load(blockPtr, 4n) // Metadata pointer
       }
     }
     return -1n
   }
 
+  /**
+   * Provides the metadata for a record type.
+   *
+   * @param metaDataPtr: Pointer to the record metadata block
+   * @param typeTag: The record type tag
+   * @param arity: Number of fields in the record
+   *
+   * @returns The names of the fields in the record, or an empty array if none found
+   */
   @unsafe
-  provide let getVariantMetadata = variant => {
-    let typeHash = WasmI32.load(variant, 4n) >> 1n
-    let variantId = WasmI32.load(variant, 12n) >> 1n
-    let mut block = findTypeMetadata(typeHash)
-    if (block == -1n) return -1n
-    let sectionLength = WasmI32.load(block, 0n)
-    block += 4n
-    let end = block + sectionLength
-    while (block < end) {
-      if (WasmI32.load(block, 8n) == variantId) {
-        return block
+  provide let getRecordMetaData = (metaDataPtr, typeTag, arity) => {
+    if (metaDataPtr == -1n) {
+      // Possible built-in record type
+      if (typeTag == _RANGE_ID) {
+        [> "rangeStart", "rangeEnd"]
+      } else {
+        [>]
       }
-      block += WasmI32.load(block, 0n)
-    }
-    return -1n
-  }
-
-  @unsafe
-  provide let getRecordMetadata = record_ => {
-    let typeHash = WasmI32.load(record_, 4n) >> 1n
-    return findTypeMetadata(typeHash)
-  }
-
-  @unsafe
-  provide let getFieldArray = (metaDataPtr, arity) => {
-    use WasmI32.{ (+), (*) }
-    let fieldArray = allocateArray(arity)
-    let mut fieldOffset = 0n
-    for (let mut i = 0n; i < arity; i += 1n) {
-      let fieldLength = WasmI32.load(metaDataPtr + fieldOffset, 4n)
-      let fieldName = allocateString(fieldLength)
-      Memory.incRef(fieldName)
-      Memory.copy(fieldName + 8n, metaDataPtr + fieldOffset + 8n, fieldLength)
-      WasmI32.store(fieldArray + 8n, fieldName, i * 4n)
-      fieldOffset += WasmI32.load(metaDataPtr, fieldOffset)
-    }
-    fieldArray
-  }
-}
-
-@unsafe
-let rec getFieldNames = (data: List<StackTag<a>>, metaDataPtr: WasmI32) => {
-  use WasmI32.{ (+) }
-  match (data) {
-    [] => [],
-    [item, ...tail] => {
-      // Get field name
-      let blockSize = WasmI32.load(metaDataPtr, 0n)
-      let fieldLength = WasmI32.load(metaDataPtr, 4n)
-      let fieldName = allocateString(fieldLength)
-      Memory.copy(
-        fieldName + _STR_LEN_OFFSET,
-        metaDataPtr + 4n,
-        fieldLength + 8n
-      )
-      let fieldName = WasmI32.toGrain(fieldName): String
-      [(fieldName, item), ...getFieldNames(tail, metaDataPtr + blockSize)]
-    },
-  }
-}
-
-let rec zipList = (list1, list2) => {
-  match ((list1, list2)) {
-    ([], _) => [],
-    (_, []) => [],
-    ([head1, ...tail1], [head2, ...tail2]) =>
-      [(head1, head2), ...zipList(tail1, tail2)],
-  }
-}
-
-@unsafe
-provide let getRecordData = (value: RecordValue<a>) => {
-  use WasmI32.{ (+), (-), (*), (>=), (>), (==), (>>) }
-  let ptr = WasmI32.fromGrain(value)
-  let arity = WasmI32.load(ptr, 12n) * 4n
-  let mut vals = []
-  for (let mut i = arity; i > 0n; i -= 4n) {
-    let fieldPtr = WasmI32.load(ptr, 12n + i)
-    let fieldVal = WasmI32.toGrain(fieldPtr): a
-    vals = [getTag(fieldVal), ...vals]
-  }
-  ignore(value)
-  let metaDataPtr = TypeMetaData.getRecordMetadata(ptr)
-  if (metaDataPtr == -1n) {
-    // Could be built-in
-    let typeId = WasmI32.load(ptr, 8n) >> 1n
-    if (typeId == _RANGE_ID) {
-      Some(zipList(["rangeStart", "rangeEnd"], vals))
     } else {
-      None
+      // +0  32-bit size of complete type info block
+      // <start repeated pattern>
+      // +0  32-bit size of record field name block
+      // +4  32-bit length of record field name
+      // +8  n-bit string
+      // <end repeated pattern>
+      let metaDataSize = WasmI32.load(metaDataPtr, 0n)
+      let metaDataEndPtr = metaDataPtr + metaDataSize
+      let mut metaDataPtr = metaDataPtr + 4n // Skip block size field
+      // Read Blocks
+      let fieldArray = WasmI32.toGrain(allocateArray(arity)): Array<String>
+      for (let mut i = 0n; i < arity; i += 1n) {
+        if (metaDataPtr > metaDataEndPtr)
+          throw Impossible("Invalid record metadata")
+        // Read the field
+        let fieldBlockSize = WasmI32.load(metaDataPtr, 0n)
+        let fieldLength = WasmI32.load(metaDataPtr, 4n)
+        let fieldName = allocateString(fieldLength)
+        Memory.copy(
+          fieldName + _STR_LEN_OFFSET,
+          metaDataPtr + 4n, // +4 to skip field size
+          fieldLength + 4n // +4 for 32-bit field length
+        )
+        fieldArray[tagSimpleNumber(i)] = WasmI32.toGrain(fieldName): String
+        // Advance to next field
+        metaDataPtr += fieldBlockSize
+      }
+      fieldArray
     }
-  } else {
-    Some(getFieldNames(vals, metaDataPtr + 4n))
+  }
+
+  /**
+   * Provides the metadata for a variant type.
+   *
+   * @param metaDataPtr: Pointer to the variant metadata block
+   * @param typeTag: The variant type tag
+   * @param variantTag: The variant tag
+   * @param arity: Number of fields in the variant
+   *
+   * @returns The name and fields of the variant
+   */
+  @unsafe
+  provide let getVariantMetaData = (metaDataPtr, typeTag, variantTag, arity) => {
+    if (metaDataPtr == -1n) {
+      if (typeTag == _OPTION_ID) {
+        return (if (variantTag == 0n) {
+          "Some"
+        } else {
+          "None"
+        }, [>])
+      } else if (typeTag == _RESULT_ID) {
+        return (if (variantTag == 0n) {
+          "Ok"
+        } else {
+          "Err"
+        }, [>])
+      } else {
+        return ("<unknown variant>", [>])
+      }
+    } else {
+      // +0  32-bit size of complete type info block
+      // <start repeated pattern>
+      // +0  32-bit size of constructor name block
+      // +4  32-bit offset to field data (for inline record constructors) or 0 (for tuple-like constructors)
+      // +4  32-bit constructor id
+      // +8  32-bit length of constructor name
+      // +12 n-bit string
+      //   <start repeated pattern> (only for inline record constructors)
+      //   +0  32-bit size of record field name block
+      //   +4  32-bit length of record field name
+      //   +8  n-bit string
+      //   <end repeated pattern>
+      // <end repeated pattern>
+      let metaDataSize = WasmI32.load(metaDataPtr, 0n)
+      let metaDataEndPtr = metaDataPtr + metaDataSize
+      let mut currentPtr = metaDataPtr + 4n // Skip block size field
+      // Locate the variant metadata
+      while (currentPtr < metaDataEndPtr) {
+        // Check variant tag
+        let constructorBlockSize = WasmI32.load(currentPtr, 0n)
+        let constructorId = WasmI32.load(currentPtr, 8n)
+        if (constructorId != variantTag) {
+          currentPtr += constructorBlockSize
+          continue
+        }
+        // Read Variant Name
+        let nameLength = WasmI32.load(currentPtr, 12n)
+        let name = allocateString(nameLength)
+        Memory.copy(
+          name + _STR_LEN_OFFSET,
+          currentPtr + 12n, // +16 to skip size(4) + offset(4) + id(4)
+          nameLength + 4n // +4 for 32-bit field length
+        )
+        // Read Variant Fields
+        let fieldOffset = WasmI32.load(currentPtr, 4n)
+        if (fieldOffset == 0n) return (WasmI32.toGrain(name): String, [>]) // Tuple variant
+        let fieldArray = WasmI32.toGrain(allocateArray(arity)): Array<String>
+        let mut fieldMetaDataPtr = currentPtr + fieldOffset
+        for (let mut i = 0n; i < arity; i += 1n) {
+          // Read the field
+          let fieldBlockSize = WasmI32.load(fieldMetaDataPtr, 0n)
+          let fieldLength = WasmI32.load(fieldMetaDataPtr, 4n)
+          let fieldName = allocateString(fieldLength)
+          Memory.copy(
+            fieldName + _STR_LEN_OFFSET,
+            fieldMetaDataPtr + 4n, // +4 to skip field size
+            fieldLength + 4n // +4 for 32-bit field length
+          )
+          fieldArray[tagSimpleNumber(i)] = WasmI32.toGrain(fieldName): String
+          // Advance to next field
+          fieldMetaDataPtr += fieldBlockSize
+        }
+        return (WasmI32.toGrain(name): String, fieldArray)
+      }
+      throw Impossible("Invalid variant metadata")
+    }
   }
 }
 
+/**
+ * Provides the record's tagged field data.
+ *
+ * @param record_: The tagged record value to extract data from
+ *
+ * @returns An associated list of field names and their tagged values
+ */
+@unsafe
+provide let getRecordData = (record_: RecordValue<a>) => {
+  // ╔══════╦═══════════╤═══════════╤══════════╤════════╤═══════╤═════╤═══════╗
+  // ║ size ║ 32        │ 32        │ 32       │ 32     │ 32    │ 32  │ 32    ║
+  // ╠══════╬═══════════╪═══════════╪══════════╪════════╪═══════╪═════╪═══════╣
+  // ║ what ║ value tag │ type hash │ type tag │ length │ elt_0 │ ... │ elt_n ║
+  // ╚══════╩═══════════╧═══════════╧══════════╧════════╧═══════╧═════╧═══════╝
+  let mut ptr = WasmI32.fromGrain(record_)
+  let typeHash = untagSimpleNumber(
+    WasmI32.toGrain(WasmI32.load(ptr, 4n)): Number
+  )
+  let typeTag = untagSimpleNumber(
+    WasmI32.toGrain(WasmI32.load(ptr, 8n)): Number
+  )
+  let arity = WasmI32.load(ptr, 12n)
+  ptr += 16n + (arity - 1n) * 4n // Advance to the start of the last element
+  // Lookup Metadata
+  let metaDataPtr = TypeMetaData.findTypeMetadata(typeHash)
+  // Get field names
+  let fieldNames = TypeMetaData.getRecordMetaData(metaDataPtr, typeTag, arity)
+  let fieldNamesLen = untagSimpleNumber(arrayLength(fieldNames))
+  // Get field data
+  let mut fieldData = []
+  for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
+    // Determine field name
+    let name = if (fieldNamesLen == 0n) {
+      "<unknown field>"
+    } else {
+      fieldNames[tagSimpleNumber(i)]
+    }
+    // Determine field value
+    let fieldPtr = WasmI32.load(ptr, 0n)
+    let fieldValue = WasmI32.toGrain(fieldPtr): b
+    let value = getTag(fieldValue)
+    ptr -= 4n // Move to previous element
+    // Pack data
+    fieldData = [(name, value), ...fieldData]
+  }
+  ignore(record_)
+  fieldData
+}
+
+/**
+ * Represents the variant's field data types.
+ *
+ * Note: The `a` is `forall a`, meaning we never want to unify it.
+ */
 provide enum VariantType<a> {
+  /** A variant with no attached data. */
   EmptyVariant,
+  /** A variant with tuple data attached. */
   TupleVariant(List<StackTag<a>>),
+  /** A variant with record data attached. */
   RecordVariant(List<(String, StackTag<a>)>),
 }
 
+/**
+ * Provides the variant's tagged field data.
+ *
+ * @param variant: The tagged variant value to extract data from
+ *
+ * @returns The name and field data of the variant
+ */
 @unsafe
-provide let isListADT = (value: ADTValue<a>) => {
-  use WasmI32.{ (==), (>>) }
-  let ptr = WasmI32.fromGrain(value)
-  let typeId = WasmI32.load(ptr, 8n) >> 1n
-  typeId == _LIST_ID
-}
-
-@unsafe
-provide let getADTData = (value: ADTValue<a>) => {
-  use WasmI32.{ (+), (-), (*), (==), (>=), (<) }
-  let ptr = WasmI32.fromGrain(value)
-  let typeId = untagSimpleNumber(WasmI32.toGrain(WasmI32.load(ptr, 8n)): Number)
-  let variantId = untagSimpleNumber(
+provide let getVariantData = (variant: ADTValue<a>) => {
+  // ╔══════╦═══════════╤═══════════╤══════════╤═════════════╤═══════╤═══════╤═════╤═══════╗
+  // ║ size ║ 32        │ 32        │ 32       │ 32          │ 32    │ 32    │ 32  │ 32    ║
+  // ╠══════╬═══════════╪═══════════╪══════════╪═════════════╪═══════╪═══════╪═════╪═══════╣
+  // ║ what ║ value tag │ type hash │ type tag │ variant tag │ arity │ elt_0 │ ... │ elt_n ║
+  // ╚══════╩═══════════╧═══════════╧══════════╧═════════════╧═══════╧═══════╧═════╧═══════╝
+  let mut ptr = WasmI32.fromGrain(variant)
+  let typeHash = untagSimpleNumber(
+    WasmI32.toGrain(WasmI32.load(ptr, 4n)): Number
+  )
+  let typeTag = untagSimpleNumber(
+    WasmI32.toGrain(WasmI32.load(ptr, 8n)): Number
+  )
+  let variantTag = untagSimpleNumber(
     WasmI32.toGrain(WasmI32.load(ptr, 12n)): Number
   )
-  let arity = WasmI32.load(ptr, _ADT_ARITY_OFFSET) * _ADT_ITEM_SIZE
-  // Get Variant Data
-  let mut dataList = []
-  for (let mut i = arity - 4n; i >= 0n; i -= _ADT_ITEM_SIZE) {
-    let variantValue = WasmI32.load(ptr, i + _ADT_DATA_OFFSET)
-    let variantValue = WasmI32.toGrain(variantValue): b
-    let variantValue = getTag(variantValue)
-    dataList = [variantValue, ...dataList]
+  let arity = WasmI32.load(ptr, 16n)
+  ptr += 20n + (arity - 1n) * 4n // Advance to the start of the last element
+  // Lookup Metadata
+  let metaDataPtr = TypeMetaData.findTypeMetadata(typeHash)
+  // Get Names
+  let (name, fields) = TypeMetaData.getVariantMetaData(
+    metaDataPtr,
+    typeTag,
+    variantTag,
+    arity
+  )
+  let fieldNamesLen = untagSimpleNumber(arrayLength(fields))
+  if (arity == 0n) return (name, EmptyVariant)
+  // Get Data
+  let data = WasmI32.toGrain(allocateArray(arity)): Array<StackTag<b>>
+  for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
+    // Determine field value
+    let fieldPtr = WasmI32.load(ptr, 0n)
+    let fieldValue = WasmI32.toGrain(fieldPtr): c
+    let value = getTag(fieldValue)
+    ptr -= 4n // Move to previous element
+    // Pack data
+    data[tagSimpleNumber(i)] = value
   }
-  // Get MetaData
-  let metaDataPtr = TypeMetaData.getVariantMetadata(ptr)
-  // Handle MetaData
-  let result = if (metaDataPtr == -1n) {
-    // Could be built-in
-    let name = if (typeId == _OPTION_ID) {
-      Some(if (variantId == 0n) {
-        "Some"
-      } else {
-        "None"
-      })
-    } else if (typeId == _RESULT_ID) {
-      Some(if (variantId == 0n) {
-        "Ok"
-      } else {
-        "Err"
-      })
-    } else {
-      None
+  ignore(variant)
+  // Pack Data
+  return (name, if (fieldNamesLen == 0n) {
+    // Tuple Variant
+    let mut fieldValues = []
+    for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
+      let value = data[tagSimpleNumber(i)]
+      fieldValues = [value, ...fieldValues]
     }
-    (name, if (arity == 0n) {
-      EmptyVariant
-    } else {
-      TupleVariant(dataList)
-    })
+    TupleVariant(fieldValues)
   } else {
-    // Get the variant name
-    let variantNameLength = WasmI32.load(metaDataPtr, 12n)
-    let variantName = allocateString(variantNameLength)
-    Memory.copy(
-      variantName + _STR_DATA_OFFSET,
-      metaDataPtr + 16n,
-      variantNameLength
-    )
-    let variantName = WasmI32.toGrain(variantName): String
-    // Get the variant field names
-    let recordFieldDataOffset = WasmI32.load(metaDataPtr, 4n)
-    // Return Empty Variant
-    if (arity == 0n) {
-      (Some(variantName), EmptyVariant)
-    } else if (recordFieldDataOffset == 0n) {
-      (Some(variantName), TupleVariant(dataList))
-    } else {
-      let dataList = getFieldNames(
-        dataList,
-        metaDataPtr + recordFieldDataOffset
-      )
-      (Some(variantName), RecordVariant(dataList))
+    // Record Variant
+    let mut fieldData = []
+    for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
+      let name = fields[tagSimpleNumber(i)]
+      let value = data[tagSimpleNumber(i)]
+      fieldData = [(name, value), ...fieldData]
     }
-  }
-  ignore(value)
-  result
+    RecordVariant(fieldData)
+  })
+}
+
+/**
+ * Checks if the given ADT value is a List variant.
+ *
+ * @param value: The ADT value to check.
+ *
+ * @returns `true` if the ADT value is a List variant, `false` otherwise.
+ */
+@unsafe
+provide let isListVariant = (value: ADTValue<a>) => {
+  let ptr = WasmI32.fromGrain(value)
+  let typeId = untagSimpleNumber(WasmI32.toGrain(WasmI32.load(ptr, 8n)): Number)
+  typeId == _LIST_ID
 }

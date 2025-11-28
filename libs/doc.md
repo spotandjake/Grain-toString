@@ -127,6 +127,12 @@ type Width
 
 Functions and constants included in the Doc module.
 
+### Doc.**empty**
+
+```grain
+empty: LayoutNode
+```
+
 ### Doc.**groupBreaker**
 
 ```grain
@@ -142,7 +148,7 @@ string: (s: String) => LayoutNode
 ### Doc.**blank**
 
 ```grain
-blank: (c: Int32) => LayoutNode
+blank: (c: Number) => LayoutNode
 ```
 
 ### Doc.**hardline**
@@ -166,27 +172,30 @@ ifBroken: (breaking: LayoutNode, flat: LayoutNode) => LayoutNode
 ### Doc.**indent**
 
 ```grain
-indent: (?count: Int32, doc: LayoutNode) => LayoutNode
+indent: (?count: Number, doc: LayoutNode) => LayoutNode
 ```
 
 ### Doc.**group**
 
 ```grain
 group:
-  (?printWidth: Option<Int32>, ?kind: GroupType, doc: LayoutNode) =>
+  (?printWidth: Option<Number>, ?kind: GroupType, doc: LayoutNode) =>
    LayoutNode
-```
-
-### Doc.**concat**
-
-```grain
-concat: (left: LayoutNode, right: LayoutNode) => LayoutNode
 ```
 
 ### Doc.**(++)**
 
 ```grain
 (++): (left: LayoutNode, right: LayoutNode) => LayoutNode
+```
+
+### Doc.**concatMap**
+
+```grain
+concatMap:
+  (sep: ((a, a) => LayoutNode), lead: (a => LayoutNode),
+   trail: (a => LayoutNode), f: ((final: Bool, a) => LayoutNode), l: 
+   List<a>) => LayoutNode
 ```
 
 ### Doc.**breakableSpace**
@@ -207,12 +216,6 @@ _break: LayoutNode
 space: LayoutNode
 ```
 
-### Doc.**empty**
-
-```grain
-empty: LayoutNode
-```
-
 ### Doc.**comma**
 
 ```grain
@@ -223,15 +226,6 @@ comma: LayoutNode
 
 ```grain
 commaBreakableSpace: LayoutNode
-```
-
-### Doc.**concatMap**
-
-```grain
-concatMap:
-  (sep: ((a, a) => LayoutNode), lead: (a => LayoutNode),
-   trail: (a => LayoutNode), f: ((final: Bool, a) => LayoutNode), l: 
-   List<a>) => LayoutNode
 ```
 
 ### Doc.**parens**
@@ -297,12 +291,13 @@ Functions and constants included in the Doc.Engine module.
 
 ```grain
 print:
-  (write: (String => a), eol: EOL, lineWidth: b, doc: LayoutNode) => Void
+  (write: (String => a), eol: EOL, lineWidth: Number, doc: LayoutNode) =>
+   Void
 ```
 
 #### Doc.Engine.**toString**
 
 ```grain
-toString: (eol: EOL, lineWidth: a, doc: LayoutNode) => String
+toString: (eol: EOL, lineWidth: Number, doc: LayoutNode) => String
 ```
 

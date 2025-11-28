@@ -1,0 +1,68 @@
+@noPervasives
+module MiniBuffer
+
+from "runtime/unsafe/wasmi32" include WasmI32
+from "runtime/unsafe/offsets" include Offsets
+use Offsets.{
+  _STR_LEN_OFFSET,
+  _STR_DATA_OFFSET,
+  _BYTES_LEN_OFFSET,
+  _BYTES_DATA_OFFSET,
+}
+from "runtime/unsafe/memory" include Memory
+from "runtime/dataStructures" include DataStructures
+use DataStructures.{
+  allocateBytes,
+  allocateString,
+  tagSimpleNumber,
+  untagSimpleNumber,
+}
+
+primitive ignore = "@ignore"
+
+abstract record MiniBuffer {
+  mut data: Bytes,
+  mut pos: Number,
+}
+@unsafe
+provide let make = size =>
+  {
+    data: WasmI32.toGrain(allocateBytes(untagSimpleNumber(size))): Bytes,
+    pos: 0,
+  }
+@unsafe
+provide let addString = (str: String, buffer: MiniBuffer) => {
+  use WasmI32.{ (*), (+), (<) }
+  let stringPointer = WasmI32.fromGrain(str)
+  let stringSize = WasmI32.load(stringPointer, _STR_LEN_OFFSET)
+  let bufferPointer = WasmI32.fromGrain(buffer.data)
+  let mut bufferSize = WasmI32.load(bufferPointer, _BYTES_LEN_OFFSET)
+  let bufferPosition = untagSimpleNumber(buffer.pos)
+  // Grow Buffer if needed
+  let desiredSize = bufferPosition + stringSize
+  if (bufferSize < desiredSize) {
+    bufferSize *= 2n
+    while (bufferSize < desiredSize) bufferSize *= 2n
+    buffer.data = WasmI32.toGrain(allocateBytes(bufferSize)): Bytes
+  }
+  let bufferSize = WasmI32.load(bufferPointer, _BYTES_LEN_OFFSET)
+  // Write String
+  Memory.copy(
+    bufferPointer + _BYTES_DATA_OFFSET + bufferPosition,
+    stringPointer + _STR_DATA_OFFSET,
+    stringSize
+  )
+  buffer.pos = tagSimpleNumber(bufferPosition + stringSize)
+  ignore(str)
+  ignore(buffer.data)
+}
+@unsafe
+provide let toString = (buffer: MiniBuffer) => {
+  use WasmI32.{ (+) }
+  let src = WasmI32.fromGrain(buffer.data)
+  let size = untagSimpleNumber(buffer.pos)
+  let dst = allocateString(size)
+  Memory.copy(dst + _BYTES_DATA_OFFSET, src + _BYTES_DATA_OFFSET, size)
+  ignore(buffer.data)
+  WasmI32.toGrain(dst): String
+}
