@@ -41,7 +41,6 @@ provide let addString = (str: String, buffer: MiniBuffer) => {
   // Grow Buffer if needed
   let desiredSize = bufferPosition + stringSize
   if (bufferSize < desiredSize) {
-    bufferSize *= 2n
     while (bufferSize < desiredSize) bufferSize *= 2n
     buffer.data = WasmI32.toGrain(allocateBytes(bufferSize)): Bytes
   }

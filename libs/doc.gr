@@ -367,7 +367,7 @@ provide let angleBrackets = (wrap=doc => group(doc), doc) =>
   wrap(string("<") ++ doc ++ string(">"))
 provide let doubleQuotes = doc => string("\"") ++ doc ++ string("\"")
 provide let singleQuotes = doc => string("'") ++ doc ++ string("'")
-provide let trailingComma = ifBroken(string(","), empty)
+provide let trailingComma = ifBroken(comma, empty)
 
 provide module Engine {
   enum EngineMode {

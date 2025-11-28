@@ -339,15 +339,14 @@ provide let getShortTag = (value: ShortValue<a>) => {
  * @param value: The tagged grain tuple value to extract data from
  *
  * @returns A list of tagged values representing the tuple's fields
- *
  */
 @unsafe
 provide let getTupleData = (value: TupleValue<a>) => {
-  let ptr = WasmI32.fromGrain(value)
-  let len = WasmI32.load(ptr, 4n)
+  let mut ptr = WasmI32.fromGrain(value)
+  let len = (WasmI32.load(ptr, 4n) - 1n) * 4n
   let mut vals = []
-  for (let mut i = len * 4n - 4n; i >= 0n; i -= 4n) {
-    let fieldPtr = WasmI32.load(ptr + 8n, i)
+  for (let mut i = len; i >= 0n; i -= 4n) {
+    let fieldPtr = WasmI32.load(ptr, 8n + i)
     let fieldVal = WasmI32.toGrain(fieldPtr): b
     vals = [getTag(fieldVal), ...vals]
   }
@@ -474,20 +473,20 @@ module TypeMetaData {
   @unsafe
   provide let getVariantMetaData = (metaDataPtr, typeTag, variantTag, arity) => {
     if (metaDataPtr == -1n) {
-      if (typeTag == _OPTION_ID) {
-        return (if (variantTag == 0n) {
-          "Some"
+      return if (typeTag == _OPTION_ID) {
+        if (variantTag == 0n) {
+          ("Some", [>])
         } else {
-          "None"
-        }, [>])
+          ("None", [>])
+        }
       } else if (typeTag == _RESULT_ID) {
-        return (if (variantTag == 0n) {
-          "Ok"
+        if (variantTag == 0n) {
+          ("Ok", [>])
         } else {
-          "Err"
-        }, [>])
+          ("Err", [>])
+        }
       } else {
-        return ("<unknown variant>", [>])
+        ("<unknown variant>", [>])
       }
     } else {
       // +0  32-bit size of complete type info block
@@ -662,14 +661,14 @@ provide let getVariantData = (variant: ADTValue<a>) => {
   }
   ignore(variant)
   // Pack Data
-  return (name, if (fieldNamesLen == 0n) {
+  return if (fieldNamesLen == 0n) {
     // Tuple Variant
     let mut fieldValues = []
     for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
       let value = data[tagSimpleNumber(i)]
       fieldValues = [value, ...fieldValues]
     }
-    TupleVariant(fieldValues)
+    (name, TupleVariant(fieldValues))
   } else {
     // Record Variant
     let mut fieldData = []
@@ -678,8 +677,8 @@ provide let getVariantData = (variant: ADTValue<a>) => {
       let value = data[tagSimpleNumber(i)]
       fieldData = [(name, value), ...fieldData]
     }
-    RecordVariant(fieldData)
-  })
+    (name, RecordVariant(fieldData))
+  }
 }
 
 /**
