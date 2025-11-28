@@ -19,30 +19,34 @@ This library helps to abstract away a lot of the unsafe memory operations needed
 
 ## Size
 
-As the goal is to include this in the standard library it is critical that we keep the bundle size of this library low, hence why regular stdlib libraries have been replaced where possible with smaller and purpose built alternatives such as `MiniBuffer`. Currently we are `2x` larger on our smallest `Hello World` program and I think we can get that within `1.5x` with some more work, before moving this work into the runtime It would be nice to have a conversation about the future of `grainValue` and the purpose of `doc.gr` as we could make it more purpose built or we could keep it generic and use it for other libraries such as `json`, `yaml`, `markdown` and other stdlib libraries.
+As the goal is to include this in the standard library it is critical that we keep the bundle size of this library low, hence why regular stdlib libraries have been replaced where possible with smaller and purpose built alternatives such as `MiniBuffer`. Currently we are `1.8x` larger on our smallest `Hello World` program and I think we can get that within `1.5x` with some more work, before moving this work into the runtime It would be nice to have a conversation about the future of `grainValue` and the purpose of `doc.gr` as we could make it more purpose built or we could keep it generic and use it for other libraries such as `json`, `yaml`, `markdown` and other stdlib libraries.
 
 
 ## Still To Be Done
-+ Fix All library todos
-+ Handle Strings
-  + String printing doesn't handle wrapping or escaping currently
++ Handle Cycles
+  + Discuss importance of cycle numbering with users? Maybe we change it to cycle id's in hex (i.e the pointer itself).
 + Nested Testing
-  + We are not testing more complex nested scenarios
+  + Test more complex nesting scenarios
+  + Test more complex cycle scenarios
++ Discuss implementing this in the runtime with the core team.
 + Determine fate of `grainValue.gr`
-  + We are either going to strip this out or hopefully I can get some of the work moved into the compiler itself reducing overhead [see here](https://github.com/grain-lang/grain/issues/2208).
+  + My goal is to upstream some of this into the compiler [see here](https://github.com/grain-lang/grain/issues/2208). This will make such abstractions almost free.
+  + If that doesn't work I think we are going to need to strip out the implementation and put the logic back into `toString` itself to reduce some of the size overhead.
 + Shrink bundle size
-  + Wasm-gc should shrink this significantly
-  + Determining the fate of `grainValue.gr` should shrink things
+  + Wasm-gc should shrink this significantly (compiler)
+  + Global initialization optimization (compiler)
+  + Determining the fate of `grainValue.gr` should shrink things (possibly compiler)
 + Fully Document `doc.gr`
 + Fully Document `toString.gr`
 + Fully Document `grainValue.gr`
 
 ## Future Experiments
 + It would be interesting to allow some sort of colored printing.
-+ It would be nice to enable a compact printing mode.
+  + I think the best way todo this would be to make a use a record pattern similar to the formatter and then shove an adapter in for coloring however that might not be as clean as doing it on a per token level.
 + Allow for custom printing settings
   + line break settings
   + indentation settings.
+  + compact mode.
 
 # Licensing
 

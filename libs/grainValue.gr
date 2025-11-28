@@ -33,6 +33,9 @@ use WasmI32.{
   (<),
   (>),
 }
+from "runtime/unsafe/wasmi64" include WasmI64
+from "runtime/unsafe/wasmf32" include WasmF32
+from "runtime/unsafe/wasmf64" include WasmF64
 from "runtime/unsafe/tags" include Tags
 from "runtime/unsafe/offsets" include Offsets
 use Offsets.{
@@ -40,6 +43,12 @@ use Offsets.{
   _STR_DATA_OFFSET,
   _ARRAY_DATA_OFFSET,
   _ARRAY_ITEM_SIZE,
+  _INT32_VALUE_OFFSET,
+  _INT64_VALUE_OFFSET,
+  _UINT32_VALUE_OFFSET,
+  _UINT64_VALUE_OFFSET,
+  _FLOAT32_VALUE_OFFSET,
+  _FLOAT64_VALUE_OFFSET,
 }
 from "runtime/unsafe/memory" include Memory
 from "runtime/dataStructures" include DataStructures
@@ -693,4 +702,52 @@ provide let isListVariant = (value: ADTValue<a>) => {
   let ptr = WasmI32.fromGrain(value)
   let typeId = untagSimpleNumber(WasmI32.toGrain(WasmI32.load(ptr, 8n)): Number)
   typeId == _LIST_ID
+}
+
+@unsafe
+provide let getInt32Value = (value: Int32) => {
+  let ptr = WasmI32.fromGrain(value)
+  let num = WasmI32.load(ptr, _INT32_VALUE_OFFSET)
+  ignore(value)
+  num
+}
+
+@unsafe
+provide let getInt64Value = (value: Int64) => {
+  let ptr = WasmI32.fromGrain(value)
+  let num = WasmI64.load(ptr, _INT64_VALUE_OFFSET)
+  ignore(value)
+  num
+}
+
+@unsafe
+provide let getUint32Value = (value: Uint32) => {
+  let ptr = WasmI32.fromGrain(value)
+  let num = WasmI32.load(ptr, _UINT32_VALUE_OFFSET)
+  ignore(value)
+  num
+}
+
+@unsafe
+provide let getUint64Value = (value: Uint64) => {
+  let ptr = WasmI32.fromGrain(value)
+  let num = WasmI64.load(ptr, _UINT64_VALUE_OFFSET)
+  ignore(value)
+  num
+}
+
+@unsafe
+provide let getFloat32Value = (value: Float32) => {
+  let ptr = WasmI32.fromGrain(value)
+  let num = WasmF32.load(ptr, _FLOAT32_VALUE_OFFSET)
+  ignore(value)
+  num
+}
+
+@unsafe
+provide let getFloat64Value = (value: Float64) => {
+  let ptr = WasmI32.fromGrain(value)
+  let num = WasmF64.load(ptr, _FLOAT64_VALUE_OFFSET)
+  ignore(value)
+  num
 }

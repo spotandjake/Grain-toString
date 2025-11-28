@@ -166,10 +166,22 @@ module HeapValues {
   assert toString(RecordEnum{ value: 1 }) == "RecordEnum{ value: 1, }" // Record Data
   assert toString(RecordEnum2{ value: 1, value2: 2 })
     == "RecordEnum2{ value: 1, value2: 2 }" // Record Multiple Data
+  // Exception - subcase of ADT
+  exception TestException
+  assert toString(TestException) == "TestException"
+  exception TupleException(Number, Number)
+  assert toString(TupleException(1, 2)) == "TupleException(1, 2)"
+  exception RecordException{ value: Number, }
+  assert toString(RecordException{ value: 1 }) == "RecordException{ value: 1, }"
   // Lambda
   assert toString(() => void) == "<lambda>"
   assert toString((a, b, c) => void) == "<lambda>"
-  // TODO: String
+  // String
+  assert toString("a") == "a" // Short
+  assert toString("test") == "test" // Long
+  assert toString("test\t") == "test\t" // Special
+  assert toString("test\"") == "test\"" // Double Quote
+  assert toString("test\'") == "test\'" // Single Quote
   // Bytes
   assert toString(b"test") == "<bytes: 74 65 73 74>"
   assert toString(
@@ -227,6 +239,30 @@ module HeapValues {
   assert toString(32uL) == "32"
 }
 // TODO: Complex Heap Values -- nested, recursive, mixed, nested escaping char, string, '\'', '\t', etc...
+assert toString(box("test")) == "box(\"test\")" // Nested Regular String
+assert toString(box("test'\b\f\n\r\t\v\\\""))
+  == "box(\"test'\\b\\f\\n\\r\\t\\v\\\\\\\"\")" // Nested Special String
+assert toString(box('a')) == "box('a')" // Nested Regular Char
+assert toString(box('\n')) == "box('\\n')" // Nested Special Char
+assert toString(box(('a', "test", 32))) == "box(('a', \"test\", 32))" // Nested Mixed Tuple
+assert toString(box(box(32))) == "box(box(32))" // Nested Box
+assert toString(box(box(box([1, 2, 3])))) == "box(box(box([1, 2, 3])))" // Deeply Nested Box
+assert toString(box(box(box(box(box(box(42)))))))
+  == "box(box(box(box(box(box(42))))))" // Very Deeply Nested Box
+assert toString(
+  box(
+    box(
+      box(
+        box(
+          box(
+            box(box(box(box(box(box(box(box(box(box(box(box(box(42)))))))))))))
+          )
+        )
+      )
+    )
+  )
+)
+  == "box(\n  box(\n    box(\n      box(\n        box(box(box(box(box(box(box(box(box(box(box(box(box(box(42)))))))))))))),\n      ),\n    ),\n  ),\n)" // Very Very Deeply Nested Box
 // Builtins
 module Builtins {
   // List
@@ -259,6 +295,14 @@ module Builtins {
     ]
   )
     == "[\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  8,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19,\n  20,\n  21,\n  22,\n  23,\n]" // Multiline
+  // Cycles
+  record rec Cycle1 {
+    mut a: Option<Cycle1>,
+  }
+  let cycle1 = { a: None, }
+  cycle1.a = Some(cycle1)
+  assert toString(cycle1) == "<1> { a: Some(<cycle to <1>>), }"
+
   // Range
   assert toString({ rangeStart: 1, rangeEnd: 2 })
     == "{ rangeStart: 1, rangeEnd: 2 }"

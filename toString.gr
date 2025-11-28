@@ -12,21 +12,14 @@
 module ToString
 
 from "runtime/unsafe/wasmi32" include WasmI32
-from "runtime/unsafe/wasmi64" include WasmI64
-from "runtime/unsafe/wasmf32" include WasmF32
 from "runtime/unsafe/wasmf64" include WasmF64
 from "runtime/unsafe/memory" include Memory
 from "runtime/unsafe/offsets" include Offsets
 use Offsets.{
   _BYTES_LEN_OFFSET,
   _BYTES_DATA_OFFSET,
+  _STR_LEN_OFFSET,
   _STR_DATA_OFFSET,
-  _INT32_VALUE_OFFSET,
-  _INT64_VALUE_OFFSET,
-  _UINT32_VALUE_OFFSET,
-  _UINT64_VALUE_OFFSET,
-  _FLOAT32_VALUE_OFFSET,
-  _FLOAT64_VALUE_OFFSET,
 }
 from "runtime/bigint" include Bigint
 from "runtime/numberUtils" include NumberUtils
@@ -34,6 +27,7 @@ from "runtime/dataStructures" include DataStructures
 use DataStructures.{
   allocateString,
   // Tagging
+  tagSimpleNumber,
   untagSimpleNumber,
   // Short Values
   untagChar,
@@ -54,7 +48,84 @@ let _RATIONAL_DENOMINATOR_OFFSET = 12n
 
 primitive ignore = "@ignore"
 primitive (!) = "@not"
+primitive (&&) = "@and"
+primitive (is) = "@is"
 primitive magic = "@magic"
+primitive box = "@box"
+primitive unbox = "@unbox"
+
+@unsafe
+let computeEscapedUSVLength = (usv: WasmI32, isString: Bool, topLevel: Bool) => {
+  match (usv) {
+    0x08n | 0x0Cn | 0x0An | 0x0Dn | 0x09n | 0x0Bn | 0x5Cn when !topLevel => 2n,
+    0x27n when !isString && !topLevel => 2n,
+    0x22n when isString && !topLevel => 2n,
+    _ => usvEncodeLength(usv),
+  }
+}
+@unsafe
+let writeEscapedUSV = (
+  usv: WasmI32,
+  ptr: WasmI32,
+  isString: Bool,
+  topLevel: Bool,
+) => {
+  use WasmI32.{ (+) }
+  let mut ptr = ptr
+  match (usv) {
+    0x08n when !topLevel => { // \b
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      ptr += writeUtf8CodePoint(ptr, 0x62n) // b
+    },
+    0x0Cn when !topLevel => { // \f
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      ptr += writeUtf8CodePoint(ptr, 0x66n) // f
+    },
+    0x0An when !topLevel => { // \n
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      ptr += writeUtf8CodePoint(ptr, 0x6En) // n
+    },
+    0x0Dn when !topLevel => { // \r
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      ptr += writeUtf8CodePoint(ptr, 0x72n) // r
+    },
+    0x09n when !topLevel => { // \t
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      ptr += writeUtf8CodePoint(ptr, 0x74n) // t
+    },
+    0x0Bn when !topLevel => { // \v
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      ptr += writeUtf8CodePoint(ptr, 0x76n) // v
+    },
+    0x5Cn when !topLevel => {
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+    },
+    0x27n when !isString && !topLevel => { // \'
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      ptr += writeUtf8CodePoint(ptr, 0x27n) // '
+    },
+    0x22n when isString && !topLevel => { // \"
+      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      ptr += writeUtf8CodePoint(ptr, 0x22n) // "
+    },
+    _ => ptr += writeUtf8CodePoint(ptr, usv),
+  }
+  ptr
+}
+
+@unsafe
+let rec findCycle = (val: a, cycleStack: List<b>, index: WasmI32) => {
+  use WasmI32.{ (+) }
+  match (cycleStack) {
+    [] => -1n,
+    [(head, flag), ..._] when head is val => {
+      flag := tagSimpleNumber(index)
+      index
+    },
+    [(head, _), ...tail] => findCycle(val, tail, index + 1n),
+  }
+}
 
 // Specific stringification functions for various data types
 module Stringify {
@@ -63,13 +134,47 @@ module Stringify {
   let defaultRadix = 10n // The default radix for numbers
   abstract record StringifyState<a> {
     topLevel: Bool,
-    cycleStack: List<GrainValue.HeapValue<a>>,
+    cycleStack: List<(GrainValue.HeapValue<a>, Box<Number>)>,
   }
   provide let emptyState = { topLevel: true, cycleStack: [] }
 
   // Heap Values
   @unsafe
-  provide let string = (val: String) => Doc.string(val) // TODO: Escaping
+  provide let string = (val: String, state) => {
+    use WasmI32.{ (+), (-), (>) }
+    let strPointer = WasmI32.fromGrain(val)
+    let strLength = WasmI32.load(strPointer, _STR_LEN_OFFSET)
+    // Compute String Length with Escaping
+    let mut escapedLength = 0n
+    let mut currentPtr = strPointer + _STR_DATA_OFFSET
+    let mut remainingByteLength = strLength
+    while (remainingByteLength > 0n) {
+      let usv = Utf8.getCodePoint(currentPtr)
+      let usvSize = Utf8.usvEncodeLength(usv)
+      remainingByteLength -= usvSize
+      currentPtr += usvSize
+      escapedLength += computeEscapedUSVLength(usv, true, state.topLevel)
+    }
+    // Write String with Escaping
+    let escapedStr = allocateString(escapedLength)
+    let mut currentPtr = strPointer + _STR_DATA_OFFSET
+    let mut escapedPtr = escapedStr + _STR_DATA_OFFSET
+    let mut remainingByteLength = strLength
+    while (remainingByteLength > 0n) {
+      let usv = Utf8.getCodePoint(currentPtr)
+      let usvSize = Utf8.usvEncodeLength(usv)
+      remainingByteLength -= usvSize
+      currentPtr += usvSize
+      escapedPtr = writeEscapedUSV(usv, escapedPtr, true, state.topLevel)
+    }
+    let content = Doc.string(WasmI32.toGrain(escapedStr): String)
+    ignore(val)
+    if (state.topLevel) {
+      content
+    } else {
+      Doc.doubleQuotes(content)
+    }
+  }
   @unsafe
   provide let bytes = (val: Bytes) => {
     use Doc.{ (++) }
@@ -99,15 +204,11 @@ module Stringify {
       GrainValue.SimpleNumberTag(v) =>
         Doc.string(NumberUtils.itoa32(untagSimpleNumber(v), defaultRadix)),
       GrainValue.Int64Tag(v) => {
-        let ptr = WasmI32.fromGrain(v)
-        let num = WasmI64.load(ptr, _INT64_VALUE_OFFSET)
-        ignore(v)
+        let num = GrainValue.getInt64Value(v)
         Doc.string(NumberUtils.itoa64(num, defaultRadix))
       },
       GrainValue.Float64Tag(v) => {
-        let ptr = WasmI32.fromGrain(v)
-        let num = WasmF64.load(ptr, _FLOAT64_VALUE_OFFSET)
-        ignore(v)
+        let num = GrainValue.getFloat64Value(v)
         Doc.string(NumberUtils.dtoa(num))
       },
       GrainValue.RationalTag(v) => {
@@ -130,63 +231,44 @@ module Stringify {
         ignore(v)
         Doc.string(str)
       },
-      GrainValue.UnknownNumberTag => Doc.string("<unknown boxed number>"),
+      GrainValue.UnknownNumberTag => Doc.string("<unknown number>"),
     }
   }
   @unsafe
   provide let int32 = (val: Int32) => {
-    let ptr = WasmI32.fromGrain(val)
-    let num = WasmI32.load(ptr, _INT32_VALUE_OFFSET)
-    ignore(val)
+    let num = GrainValue.getInt32Value(val)
     Doc.string(NumberUtils.itoa32(num, defaultRadix))
   }
   @unsafe
   provide let float32 = (val: Float32) => {
-    let ptr = WasmI32.fromGrain(val)
-    let num = WasmF64.promoteF32(WasmF32.load(ptr, _FLOAT32_VALUE_OFFSET))
-    ignore(val)
+    let num = GrainValue.getFloat32Value(val)
+    let num = WasmF64.promoteF32(num)
     Doc.string(NumberUtils.dtoa(num))
   }
   @unsafe
   provide let uint32 = (val: Uint32) => {
-    let ptr = WasmI32.fromGrain(val)
-    let num = WasmI32.load(ptr, _UINT32_VALUE_OFFSET)
-    ignore(val)
+    let num = GrainValue.getUint32Value(val)
     Doc.string(NumberUtils.utoa32(num, defaultRadix))
   }
   @unsafe
   provide let uint64 = (val: Uint64) => {
-    let ptr = WasmI32.fromGrain(val)
-    let num = WasmI64.load(ptr, _UINT64_VALUE_OFFSET)
-    ignore(val)
+    let num = GrainValue.getUint64Value(val)
     Doc.string(NumberUtils.utoa64(num, defaultRadix))
   }
   // Short Values
   @unsafe
   provide let char = (val: Char, state) => {
-    // TODO: It would be nice if we could share this logic with strings
-    let content = match (val) {
-      '\b' when !state.topLevel => "\\b",
-      '\f' when !state.topLevel => "\\f",
-      '\n' when !state.topLevel => "\\n",
-      '\r' when !state.topLevel => "\\r",
-      '\t' when !state.topLevel => "\\t",
-      '\v' when !state.topLevel => "\\v",
-      '\\' when !state.topLevel => "\\\\",
-      '\'' when !state.topLevel => "\\'",
-      _ => {
-        use WasmI32.{ (+) }
-        let usv = untagChar(val)
-        let byteCount = usvEncodeLength(usv)
-        let string = allocateString(byteCount)
-        writeUtf8CodePoint(string + _STR_DATA_OFFSET, usv)
-        WasmI32.toGrain(string): String
-      },
-    }
+    use WasmI32.{ (+) }
+    let usv = untagChar(val)
+    let strLength = computeEscapedUSVLength(usv, false, state.topLevel)
+    let str = allocateString(strLength)
+    writeEscapedUSV(usv, str + _STR_DATA_OFFSET, false, state.topLevel)
+    ignore(val)
+    let content = Doc.string(WasmI32.toGrain(str): String)
     if (state.topLevel) {
-      Doc.string(content)
+      content
     } else {
-      Doc.singleQuotes(Doc.string(content))
+      Doc.singleQuotes(content)
     }
   }
   @unsafe
@@ -230,21 +312,34 @@ module Stringify {
       Doc.string("<unknown constant value>")
     }
   }
-
   @unsafe
   let rec heapValueToString = (val: GrainValue.HeapValue<a>, state) => {
-    // TODO: Handle Cycle - Check the stack for cycles emit <Cycle $n>
+    use Doc.{ (++) }
+    use WasmI32.{ (!=) }
+    // TODO: Handle cycles
+    // Store a mutable (boxed) map of visited nodes with their cycle index in the state
+    // Convert cycleStack to be a single list of visited nodes with their cycle index
+    // Only add recursive capable values to the cycle stack (i.e tuples, arrays, records, adts)
+    // If we find the cycle on the stack look up in the map and emit cycle to n
+    //   Set the cycle index to be n + 1 in the map (Boxed Associative list)
+    // Otherwise add to the stack
+    // Alternatively we talk to the core team about the importance of deterministic printing of cycles
+    // It would be far cleaner to just print the pointer value as the cycle id
+    let cycleIndex = findCycle(val, state.cycleStack, 0n)
+    if (cycleIndex != -1n) {
+      return Doc.string("<cycle to <")
+        ++ Doc.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
+        ++ Doc.string(">>")
+    }
     // Get The Heap Tag
-    match (GrainValue.getHeapTag(val)) {
-      TupleTag(v) =>
-        tuple(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
-      ArrayTag(v) =>
-        array(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
-      RecordTag(v) =>
-        _record(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
-      ADTTag(v) => adt(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
+    let cycleStack = [(val, box(-1)), ...state.cycleStack]
+    let content = match (GrainValue.getHeapTag(val)) {
+      TupleTag(v) => tuple(v, { ...state, cycleStack }),
+      ArrayTag(v) => array(v, { ...state, cycleStack }),
+      RecordTag(v) => _record(v, { ...state, cycleStack }),
+      ADTTag(v) => adt(v, { ...state, cycleStack }),
       ClosureTag(_) => Doc.string("<lambda>"),
-      StringTag(v) => string(v),
+      StringTag(v) => string(v, state),
       BytesTag(v) => bytes(v),
       // Boxed Number Types
       BoxedNumberTag(v) => number(v),
@@ -255,6 +350,19 @@ module Stringify {
       Uint64Tag(v) => uint64(v),
       // Unknown
       GrainValue.UnknownTag => Doc.string("<unknown heap value>"),
+    }
+    return match (cycleStack) {
+      [(_, flag), ..._] when untagSimpleNumber(unbox(flag)) != -1n =>
+        Doc.group(
+          Doc.angleBrackets(
+            Doc.string(
+              NumberUtils.itoa32(untagSimpleNumber(unbox(flag)), defaultRadix)
+            )
+          )
+            ++ Doc.blank(1)
+            ++ content
+        ),
+      _ => content,
     }
   }
   and tupleHelp = (vals: List<GrainValue.StackTag<a>>, isVariant, state) => {

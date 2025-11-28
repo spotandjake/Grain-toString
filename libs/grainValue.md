@@ -449,3 +449,39 @@ Returns:
 | ------ | ------------------------------------------------------------- |
 | `Bool` | `true` if the ADT value is a List variant, `false` otherwise. |
 
+### GrainValue.**getInt32Value**
+
+```grain
+getInt32Value: (value: Int32) => WasmI32
+```
+
+### GrainValue.**getInt64Value**
+
+```grain
+getInt64Value: (value: Int64) => WasmI64
+```
+
+### GrainValue.**getUint32Value**
+
+```grain
+getUint32Value: (value: Uint32) => WasmI32
+```
+
+### GrainValue.**getUint64Value**
+
+```grain
+getUint64Value: (value: Uint64) => WasmI64
+```
+
+### GrainValue.**getFloat32Value**
+
+```grain
+getFloat32Value: (value: Float32) => WasmF32
+```
+
+### GrainValue.**getFloat64Value**
+
+```grain
+getFloat64Value: (value: Float64) => WasmF64
+```
+
