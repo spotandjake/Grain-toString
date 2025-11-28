@@ -5,3 +5,6 @@
 
 # Nix
 .direnv/
+
+# Mac
+.DS_Store
