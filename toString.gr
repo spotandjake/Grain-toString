@@ -34,7 +34,6 @@ from "runtime/dataStructures" include DataStructures
 use DataStructures.{
   allocateString,
   // Tagging
-  tagSimpleNumber,
   untagSimpleNumber,
   // Short Values
   untagChar,
@@ -55,7 +54,6 @@ let _RATIONAL_DENOMINATOR_OFFSET = 12n
 
 primitive ignore = "@ignore"
 primitive (!) = "@not"
-primitive arrayLength = "@array.length"
 primitive magic = "@magic"
 
 // Specific stringification functions for various data types
@@ -75,25 +73,23 @@ module Stringify {
   @unsafe
   provide let bytes = (val: Bytes) => {
     use Doc.{ (++) }
-    use WasmI32.{ (+), (-), (*), (<), (>), (==) }
-    let ptr = WasmI32.fromGrain(val)
+    use WasmI32.{ (+), (-), (*), (<), (>) }
+    let mut ptr = WasmI32.fromGrain(val)
     let len = WasmI32.load(ptr, _BYTES_LEN_OFFSET)
     let len = if (len > 32n) 32n else len // Limit to 32 bytes for display
+    let ptr = ptr + _BYTES_DATA_OFFSET
 
     let hex = NumberUtils.get_HEX_DIGITS()
-    let strLen = len * 3n - 1n // 2 hex digits + 1 space per byte
+    let strLen = len * 3n - 1n // 2 hex digits + 1 space per byte - trailing space
     let str = allocateString(strLen)
-    let bytesOffset = ptr + _BYTES_DATA_OFFSET
     let strOffset = str + _STR_DATA_OFFSET
     Memory.fill(strOffset, 0x20n, strLen) // Fill with spaces
     for (let mut i = 0n; i < len; i += 1n) {
-      let n = WasmI32.load8U(bytesOffset, i)
-      let j = i * 3n
-      let k = n * 2n
-      WasmI32.store16(strOffset, WasmI32.load16U(hex, k), j)
+      let n = WasmI32.load8U(ptr, i) * 2n
+      WasmI32.store16(strOffset, WasmI32.load16U(hex, n), i * 3n)
     }
-    let content = Doc.string(WasmI32.toGrain(str): String)
     ignore(val)
+    let content = Doc.string(WasmI32.toGrain(str): String)
     let content = if (len < 32n) content else content ++ Doc.string("...")
     Doc.angleBrackets(Doc.string("bytes: ") ++ content)
   }
@@ -117,18 +113,20 @@ module Stringify {
       GrainValue.RationalTag(v) => {
         use Doc.{ (++) }
         let ptr = WasmI32.fromGrain(v)
-        let numerator = Bigint.bigIntToString10(
-          WasmI32.load(ptr, _RATIONAL_NUMERATOR_OFFSET)
+        let numerator = Bigint.bigIntToString(
+          WasmI32.load(ptr, _RATIONAL_NUMERATOR_OFFSET),
+          defaultRadix
         )
-        let denominator = Bigint.bigIntToString10(
-          WasmI32.load(ptr, _RATIONAL_DENOMINATOR_OFFSET)
+        let denominator = Bigint.bigIntToString(
+          WasmI32.load(ptr, _RATIONAL_DENOMINATOR_OFFSET),
+          defaultRadix
         )
         ignore(v)
         Doc.string(numerator) ++ Doc.string("/") ++ Doc.string(denominator)
       },
       GrainValue.BigIntTag(v) => {
         let ptr = WasmI32.fromGrain(v)
-        let str = Bigint.bigIntToString10(ptr)
+        let str = Bigint.bigIntToString(ptr, defaultRadix)
         ignore(v)
         Doc.string(str)
       },
@@ -166,7 +164,6 @@ module Stringify {
   // Short Values
   @unsafe
   provide let char = (val: Char, state) => {
-    use Doc.{ (++) }
     // TODO: It would be nice if we could share this logic with strings
     let content = match (val) {
       '\b' when !state.topLevel => "\\b",
@@ -222,16 +219,20 @@ module Stringify {
   @unsafe
   let constantValueToString = (val: GrainValue.ConstantValue<a>) => {
     use WasmI32.{ (==) }
-    match (WasmI32.fromGrain(val)) {
-      v when v == WasmI32.fromGrain(true) => Doc.string("true"),
-      v when v == WasmI32.fromGrain(false) => Doc.string("false"),
-      v when v == WasmI32.fromGrain(void) => Doc.string("void"),
-      _ => Doc.string("<unknown small value>"),
+    let v = WasmI32.fromGrain(val)
+    if (v == WasmI32.fromGrain(true)) {
+      Doc.string("true")
+    } else if (v == WasmI32.fromGrain(false)) {
+      Doc.string("false")
+    } else if (v == WasmI32.fromGrain(void)) {
+      Doc.string("void")
+    } else {
+      Doc.string("<unknown constant value>")
     }
   }
 
   @unsafe
-  let rec heapValueToString = (val: GrainValue.HeapValue<b>, state) => {
+  let rec heapValueToString = (val: GrainValue.HeapValue<a>, state) => {
     // TODO: Handle Cycle - Check the stack for cycles emit <Cycle $n>
     // Get The Heap Tag
     match (GrainValue.getHeapTag(val)) {
@@ -256,7 +257,7 @@ module Stringify {
       GrainValue.UnknownTag => Doc.string("<unknown heap value>"),
     }
   }
-  and tupleHelp = (vals: List<GrainValue.StackTag<f>>, isVariant, state) => {
+  and tupleHelp = (vals: List<GrainValue.StackTag<a>>, isVariant, state) => {
     let state = { ...state, topLevel: false }
     use Doc.{ (++) }
     let content = Doc.parens(
@@ -290,23 +291,20 @@ module Stringify {
   and array = (val: Array<a>, state) => {
     let state = { ...state, topLevel: false }
     use Doc.{ (++) }
-    use WasmI32.{ (>=), (-) }
-    let mut vals = []
-    let len = untagSimpleNumber(arrayLength(val))
-    for (let mut i = len - 1n; i >= 0n; i -= 1n) {
-      // NOTE: We use `magic` here to prevent unifying the param
-      vals = [value(magic(val[tagSimpleNumber(i)]): c, state), ...vals]
-    }
+    let vals = GrainValue.getArrayData(val)
     Doc.arrayBrackets(
       Doc.indent(
         Doc.concatMap(
           lead=next => Doc._break,
           sep=(prev, next) => Doc.breakableSpace,
           trail=prev => Doc.empty,
-          f=(final, val) => if (final) {
-            Doc.group(val) ++ Doc.trailingComma
-          } else {
-            Doc.group(val ++ Doc.comma)
+          f=(final, val) => {
+            let val = taggedValue(val, state)
+            if (final) {
+              Doc.group(val) ++ Doc.trailingComma
+            } else {
+              Doc.group(val ++ Doc.comma)
+            }
           },
           vals
         )
@@ -314,7 +312,7 @@ module Stringify {
         ++ Doc._break
     )
   }
-  and _recordHelp = (vals: List<(String, GrainValue.StackTag<f>)>, state) => {
+  and _recordHelp = (vals: List<(String, GrainValue.StackTag<a>)>, state) => {
     use Doc.{ (++) }
     Doc.braces(
       Doc.indent(
@@ -329,7 +327,7 @@ module Stringify {
             )
             if (final) {
               entry ++ match (vals) {
-                [vals] => Doc.comma,
+                [_] => Doc.comma,
                 _ => Doc.trailingComma,
               }
             } else {
@@ -368,7 +366,7 @@ module Stringify {
     use Doc.{ (++) }
     let (name, variantData) = GrainValue.getVariantData(val)
     if (GrainValue.isListVariant(val)) {
-      list(magic(val): List<a>, { ...state, topLevel: false })
+      list(magic(val): List<b>, { ...state, topLevel: false })
     } else {
       Doc.string(name) ++ match (variantData) {
         GrainValue.TupleVariant(vals) =>
@@ -379,7 +377,7 @@ module Stringify {
       }
     }
   }
-  and taggedValue = (val: GrainValue.StackTag<d>, state) => {
+  and taggedValue = (val: GrainValue.StackTag<a>, state) => {
     match (val) {
       HeapTag(v) => heapValueToString(v, state),
       ShortTag(v) => shortValueToString(v, state),
@@ -393,5 +391,8 @@ module Stringify {
   provide { value }
 }
 
-provide let toString = (val: a) =>
+provide let toString = (val: a) => {
+  // Note: This is a bit of hack to get around grain's lack of forall types
+  let val = magic(val): b
   Doc.Engine.toString(LF, 80, Stringify.value(val, Stringify.emptyState))
+}

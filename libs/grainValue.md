@@ -359,15 +359,35 @@ Provides the tuples tagged contents.
 
 Parameters:
 
-| param   | type            | description                                        |
-| ------- | --------------- | -------------------------------------------------- |
-| `value` | `TupleValue<a>` | The tagged grain tuple value to extract data from. |
+| param   | type            | description                                       |
+| ------- | --------------- | ------------------------------------------------- |
+| `value` | `TupleValue<a>` | The tagged grain tuple value to extract data from |
 
 Returns:
 
-| type                | description                                              |
-| ------------------- | -------------------------------------------------------- |
-| `List<StackTag<b>>` | A list of tagged values representing the tuple's fields. |
+| type                | description                                             |
+| ------------------- | ------------------------------------------------------- |
+| `List<StackTag<b>>` | A list of tagged values representing the tuple's fields |
+
+### GrainValue.**getArrayData**
+
+```grain
+getArrayData: (value: Array<a>) => List<StackTag<b>>
+```
+
+Provides the array's tagged contents.
+
+Parameters:
+
+| param   | type       | description                                       |
+| ------- | ---------- | ------------------------------------------------- |
+| `value` | `Array<a>` | The tagged grain array value to extract data from |
+
+Returns:
+
+| type                | description                                               |
+| ------------------- | --------------------------------------------------------- |
+| `List<StackTag<b>>` | A list of tagged values representing the array's elements |
 
 ### GrainValue.**getRecordData**
 
