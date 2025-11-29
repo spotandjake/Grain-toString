@@ -448,7 +448,7 @@ module TypeMetaData {
       let metaDataEndPtr = metaDataPtr + metaDataSize
       let mut metaDataPtr = metaDataPtr + 4n // Skip block size field
       // Read Blocks
-      let fieldArray = WasmI32.toGrain(allocateArray(arity)): Array<String>
+      let fieldArray = allocateArray(arity)
       for (let mut i = 0n; i < arity; i += 1n) {
         if (metaDataPtr > metaDataEndPtr)
           throw Impossible("Invalid record metadata")
@@ -461,11 +461,17 @@ module TypeMetaData {
           metaDataPtr + 4n, // +4 to skip field size
           fieldLength + 4n // +4 for 32-bit field length
         )
-        fieldArray[tagSimpleNumber(i)] = WasmI32.toGrain(fieldName): String
+        // Write to array
+        Memory.incRef(fieldName)
+        WasmI32.store(
+          fieldArray,
+          fieldName,
+          _ARRAY_DATA_OFFSET + i * _ARRAY_ITEM_SIZE
+        )
         // Advance to next field
         metaDataPtr += fieldBlockSize
       }
-      fieldArray
+      WasmI32.toGrain(fieldArray): Array<String>
     }
   }
 
@@ -534,7 +540,7 @@ module TypeMetaData {
         // Read Variant Fields
         let fieldOffset = WasmI32.load(currentPtr, 4n)
         if (fieldOffset == 0n) return (WasmI32.toGrain(name): String, [>]) // Tuple variant
-        let fieldArray = WasmI32.toGrain(allocateArray(arity)): Array<String>
+        let fieldArray = allocateArray(arity)
         let mut fieldMetaDataPtr = currentPtr + fieldOffset
         for (let mut i = 0n; i < arity; i += 1n) {
           // Read the field
@@ -546,11 +552,20 @@ module TypeMetaData {
             fieldMetaDataPtr + 4n, // +4 to skip field size
             fieldLength + 4n // +4 for 32-bit field length
           )
-          fieldArray[tagSimpleNumber(i)] = WasmI32.toGrain(fieldName): String
+          // Write to array
+          Memory.incRef(fieldName)
+          WasmI32.store(
+            fieldArray,
+            fieldName,
+            _ARRAY_DATA_OFFSET + i * _ARRAY_ITEM_SIZE
+          )
           // Advance to next field
           fieldMetaDataPtr += fieldBlockSize
         }
-        return (WasmI32.toGrain(name): String, fieldArray)
+        return (
+          WasmI32.toGrain(name): String,
+          WasmI32.toGrain(fieldArray): Array<String>,
+        )
       }
       throw Impossible("Invalid variant metadata")
     }
@@ -658,24 +673,26 @@ provide let getVariantData = (variant: ADTValue<a>) => {
   let fieldNamesLen = untagSimpleNumber(arrayLength(fields))
   if (arity == 0n) return (name, EmptyVariant)
   // Get Data
-  let data = WasmI32.toGrain(allocateArray(arity)): Array<StackTag<b>>
+  let data = allocateArray(arity)
   for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
     // Determine field value
     let fieldPtr = WasmI32.load(ptr, 0n)
     let fieldValue = WasmI32.toGrain(fieldPtr): c
     let value = getTag(fieldValue)
     ptr -= 4n // Move to previous element
-    // Pack data
-    data[tagSimpleNumber(i)] = value
+    // Write to data array
+    let valuePtr = WasmI32.fromGrain(value)
+    Memory.incRef(valuePtr)
+    WasmI32.store(data, valuePtr, _ARRAY_DATA_OFFSET + i * _ARRAY_ITEM_SIZE)
   }
+  let data = WasmI32.toGrain(data): Array<StackTag<b>>
   ignore(variant)
   // Pack Data
   return if (fieldNamesLen == 0n) {
     // Tuple Variant
     let mut fieldValues = []
     for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
-      let value = data[tagSimpleNumber(i)]
-      fieldValues = [value, ...fieldValues]
+      fieldValues = [data[tagSimpleNumber(i)], ...fieldValues]
     }
     (name, TupleVariant(fieldValues))
   } else {

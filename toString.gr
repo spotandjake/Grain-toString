@@ -115,15 +115,28 @@ let writeEscapedUSV = (
 }
 
 @unsafe
-let rec findCycle = (val: a, cycleStack: List<b>, index: WasmI32) => {
-  use WasmI32.{ (+) }
+let rec isCycleInStack = (
+  value: GrainValue.HeapValue<a>,
+  cycleStack: List<GrainValue.HeapValue<a>>,
+) => {
   match (cycleStack) {
-    [] => -1n,
-    [(head, flag), ..._] when head is val => {
-      flag := tagSimpleNumber(index)
-      index
+    [] => false,
+    [stackValue, ..._] when stackValue is value => {
+      true
     },
-    [(head, _), ...tail] => findCycle(val, tail, index + 1n),
+    [_, ...tail] => isCycleInStack(value, tail),
+  }
+}
+
+@unsafe
+let rec getCycleNumber = (
+  value: GrainValue.HeapValue<a>,
+  cycleMap: List<(GrainValue.HeapValue<a>, Number)>,
+) => {
+  match (cycleMap) {
+    [] => -1n,
+    [(head, num), ..._] when head is value => untagSimpleNumber(num),
+    [_, ...tail] => getCycleNumber(value, tail),
   }
 }
 
@@ -134,9 +147,11 @@ module Stringify {
   let defaultRadix = 10n // The default radix for numbers
   abstract record StringifyState<a> {
     topLevel: Bool,
-    cycleStack: List<(GrainValue.HeapValue<a>, Box<Number>)>,
+    cycleStack: List<GrainValue.HeapValue<a>>,
+    cycleMap: Box<List<(GrainValue.HeapValue<a>, Number)>>,
   }
-  provide let emptyState = { topLevel: true, cycleStack: [] }
+  provide let emptyState = () =>
+    { topLevel: true, cycleStack: [], cycleMap: box([]) }
 
   // Heap Values
   @unsafe
@@ -325,14 +340,26 @@ module Stringify {
     // Otherwise add to the stack
     // Alternatively we talk to the core team about the importance of deterministic printing of cycles
     // It would be far cleaner to just print the pointer value as the cycle id
-    let cycleIndex = findCycle(val, state.cycleStack, 0n)
-    if (cycleIndex != -1n) {
+    if (isCycleInStack(val, state.cycleStack)) {
+      let cycleMap = unbox(state.cycleMap)
+      let cycleIndex = match (getCycleNumber(val, cycleMap)) {
+        -1n => {
+          use WasmI32.{ (+) }
+          let index = match (cycleMap) {
+            [] => 1n,
+            [(_, n), ..._] => untagSimpleNumber(n) + 1n,
+          }
+          state.cycleMap := [(val, tagSimpleNumber(index)), ...cycleMap]
+          index
+        },
+        n => n,
+      }
       return Doc.string("<cycle to <")
         ++ Doc.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
         ++ Doc.string(">>")
     }
     // Get The Heap Tag
-    let cycleStack = [(val, box(-1)), ...state.cycleStack]
+    let cycleStack = [val, ...state.cycleStack]
     let content = match (GrainValue.getHeapTag(val)) {
       TupleTag(v) => tuple(v, { ...state, cycleStack }),
       ArrayTag(v) => array(v, { ...state, cycleStack }),
@@ -351,18 +378,17 @@ module Stringify {
       // Unknown
       GrainValue.UnknownTag => Doc.string("<unknown heap value>"),
     }
-    return match (cycleStack) {
-      [(_, flag), ..._] when untagSimpleNumber(unbox(flag)) != -1n =>
-        Doc.group(
-          Doc.angleBrackets(
-            Doc.string(
-              NumberUtils.itoa32(untagSimpleNumber(unbox(flag)), defaultRadix)
-            )
-          )
-            ++ Doc.blank(1)
-            ++ content
-        ),
-      _ => content,
+    let cycleIndex = getCycleNumber(val, unbox(state.cycleMap))
+    return if (cycleIndex != -1n) {
+      Doc.group(
+        Doc.angleBrackets(
+          Doc.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
+        )
+          ++ Doc.blank(1)
+          ++ content
+      )
+    } else {
+      content
     }
   }
   and tupleHelp = (vals: List<GrainValue.StackTag<a>>, isVariant, state) => {
@@ -502,5 +528,6 @@ module Stringify {
 provide let toString = (val: a) => {
   // Note: This is a bit of hack to get around grain's lack of forall types
   let val = magic(val): b
-  Doc.Engine.toString(LF, 80, Stringify.value(val, Stringify.emptyState))
+  let ast = Stringify.value(val, Stringify.emptyState())
+  Doc.Engine.toString(LF, 80, ast)
 }

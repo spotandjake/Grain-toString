@@ -121,8 +121,6 @@ use Utf8.{ isLeadingByte }
 from "./miniBuffer.gr" include MiniBuffer
 
 // Offsets
-@unsafe
-let _STR_ITEM_SIZE = 4n
 
 primitive (||) = "@or"
 primitive throw = "@throw"
@@ -166,7 +164,7 @@ let buildSpaceString = count => {
   let size = untagSimpleNumber(count)
   let ptr = allocateString(size)
   // 32n is ASCII code for space
-  Memory.fill(ptr + _STR_DATA_OFFSET, 32n, size * _STR_ITEM_SIZE)
+  Memory.fill(ptr + _STR_DATA_OFFSET, 32n, size)
   WasmI32.toGrain(ptr): String
 }
 

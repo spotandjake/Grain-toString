@@ -263,6 +263,55 @@ assert toString(
   )
 )
   == "box(\n  box(\n    box(\n      box(\n        box(box(box(box(box(box(box(box(box(box(box(box(box(box(42)))))))))))))),\n      ),\n    ),\n  ),\n)" // Very Very Deeply Nested Box
+// Cycles
+record rec Cycle1 {
+  mut a: Option<Cycle1>,
+}
+let cycle1 = { a: None, }
+cycle1.a = Some(cycle1)
+assert toString(cycle1) == "<1> { a: Some(<cycle to <1>>), }"
+record rec Cycle2 {
+  val: Number,
+  mut a: Option<Cycle2>,
+}
+let cycle2A = { val: 1, a: None }
+let cycle2B = { val: 2, a: None }
+let cycle1AOpt = Some(cycle2A)
+let cycle2BOpt = Some(cycle2B)
+cycle2A.a = cycle2BOpt
+cycle2B.a = cycle1AOpt
+assert toString([cycle2A, cycle2B])
+  == "[\n  <1> { val: 1, a: Some({ val: 2, a: Some(<cycle to <1>>) }) },\n  <2> { val: 2, a: Some(<1> { val: 1, a: Some(<cycle to <2>>) }) },\n]"
+record rec Cycle3 {
+  val: Number,
+  mut next: Option<Cycle3>,
+}
+
+let cycle3A = { val: 1, next: None }
+let cycle3AOpt = Some(cycle3A)
+let cycle3B = Some({ val: 2, next: cycle3AOpt })
+let cycle3C = Some({ val: 3, next: cycle3B })
+let cycle3D = Some({ val: 4, next: cycle3C })
+let cycle3E = Some({ val: 5, next: cycle3D })
+cycle3A.next = cycle3E
+assert toString([cycle3AOpt, cycle3B, cycle3C, cycle3D, cycle3E])
+  == "[\n  <1> Some(\n    { \n      val: 1,\n      next: Some(\n        { \n          val: 5,\n          next: Some(\n            { \n              val: 4,\n              next: Some(\n                { val: 3, next: Some({ val: 2, next: <cycle to <1>> }) },\n              ), \n            },\n          ), \n        },\n      ), \n    },\n  ),\n  <2> Some(\n    { \n      val: 2,\n      next: <1> Some(\n        { \n          val: 1,\n          next: Some(\n            { \n              val: 5,\n              next: Some(\n                { val: 4, next: Some({ val: 3, next: <cycle to <2>> }) },\n              ), \n            },\n          ), \n        },\n      ), \n    },\n  ),\n  <3> Some(\n    { \n      val: 3,\n      next: <2> Some(\n        { \n          val: 2,\n          next: <1> Some(\n            { \n              val: 1,\n              next: Some(\n                { val: 5, next: Some({ val: 4, next: <cycle to <3>> }) },\n              ), \n            },\n          ), \n        },\n      ), \n    },\n  ),\n  <4> Some(\n    { \n      val: 4,\n      next: <3> Some(\n        { \n          val: 3,\n          next: <2> Some(\n            { \n              val: 2,\n              next: <1> Some(\n                { val: 1, next: Some({ val: 5, next: <cycle to <4>> }) },\n              ), \n            },\n          ), \n        },\n      ), \n    },\n  ),\n  <5> Some(\n    { \n      val: 5,\n      next: <4> Some(\n        { \n          val: 4,\n          next: <3> Some(\n            { \n              val: 3,\n              next: <2> Some(\n                { val: 2, next: <1> Some({ val: 1, next: <cycle to <5>> }) },\n              ), \n            },\n          ), \n        },\n      ), \n    },\n  ),\n]"
+enum rec Cycle4 {
+  Rec4(Box<Option<Cycle4>>),
+}
+let cycle4A = box(None)
+let cycle4B = Rec4(cycle4A)
+cycle4A := Some(cycle4B)
+assert toString(cycle4A) == "<1> box(Some(Rec4(<cycle to <1>>)))"
+assert toString(unbox(cycle4A)) == "<1> Some(Rec4(box(<cycle to <1>>)))"
+enum rec Cycle5 {
+  Rec5(Array<Option<Cycle5>>),
+}
+let cycle5A = [> None]
+let cycle5B = Rec5(cycle5A)
+cycle5A[0] = Some(cycle5B)
+assert toString(cycle5A) == "<1> [>Some(Rec5(<cycle to <1>>))]"
+
 // Builtins
 module Builtins {
   // List
@@ -295,14 +344,7 @@ module Builtins {
     ]
   )
     == "[\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  8,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19,\n  20,\n  21,\n  22,\n  23,\n]" // Multiline
-  // Cycles
-  record rec Cycle1 {
-    mut a: Option<Cycle1>,
-  }
-  let cycle1 = { a: None, }
-  cycle1.a = Some(cycle1)
-  assert toString(cycle1) == "<1> { a: Some(<cycle to <1>>), }"
-
+  // TODO: Long Long List
   // Range
   assert toString({ rangeStart: 1, rangeEnd: 2 })
     == "{ rangeStart: 1, rangeEnd: 2 }"
