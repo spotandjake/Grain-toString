@@ -8,14 +8,26 @@
  */
 module ToStringTest
 
+from "array" include Array
+from "string" include String
+from "list" include List
 from "../toString.gr" include ToString
 use ToString.{ toString }
 
 // Short Values
 module ShortValues {
   assert toString('a') == "a" // Char
-  assert toString('\t') == "\t" // Char
-  assert toString('\'') == "'" // Char
+  assert toString('\b') == "\b" // Char escape
+  assert toString('\f') == "\f" // Char escape
+  assert toString('\n') == "\n" // Char escape
+  assert toString('\r') == "\r" // Char escape
+  assert toString('\t') == "\t" // Char escape
+  assert toString('\v') == "\v" // Char escape
+  assert toString('\'') == "'" // Char escape
+  assert toString('"') == "\"" // Char no escape
+  assert toString('ñ') == "ñ" // Char emoji (2 bytes)
+  assert toString('☃') == "☃" // Char emoji (3 bytes)
+  assert toString('🌾') == "🌾" // Char emoji (4 bytes)
   assert toString(-32s) == "-32" // Int8
   assert toString(0s) == "0" // Int8
   assert toString(32s) == "32" // Int8
@@ -90,6 +102,7 @@ module HeapValues {
   )
     == "(\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  7,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19,\n  20,\n  21,\n  22,\n  23,\n)" // Multiline
   // Array
+  assert toString([>]) == "[>]"
   assert toString([> 1, 2, 3]) == "[>1, 2, 3]"
   assert toString(
     [>
@@ -152,6 +165,15 @@ module HeapValues {
     }
   )
     == "{ \n  value: 1,\n  value2: 2,\n  value3: 3,\n  value4: 4,\n  value5: 5,\n  value6: 6,\n  value7: 7,\n  value8: 8, \n}"
+  record NestedRecord1 {
+    inner: Number,
+  }
+  record NestedRecord2 {
+    top: Number,
+    nested: NestedRecord1,
+  }
+  assert toString({ top: 1, nested: { inner: 2, } })
+    == "{ top: 1, nested: { inner: 2, } }"
   // ADT
   enum TestEnum {
     SimpleEnum,
@@ -254,11 +276,17 @@ module HeapValues {
   assert toString(32uL) == "32"
 }
 // TODO: Complex Heap Values -- nested, recursive, mixed, nested escaping char, string, '\'', '\t', etc...
-assert toString(box("test")) == "box(\"test\")" // Nested Regular String
-assert toString(box("test'\b\f\n\r\t\v\\\""))
-  == "box(\"test'\\b\\f\\n\\r\\t\\v\\\\\\\"\")" // Nested Special String
 assert toString(box('a')) == "box('a')" // Nested Regular Char
 assert toString(box('\n')) == "box('\\n')" // Nested Special Char
+assert toString(box("test")) == "box(\"test\")" // Box Nested Regular String
+assert toString(box("test'\b\f\n\r\t\v\\\""))
+  == "box(\"test'\\b\\f\\n\\r\\t\\v\\\\\\\"\")" // Box Nested Special String
+record RecordNestedStringChar {
+  charValue: Char,
+  stringValue: String,
+}
+assert toString({ charValue: '\'', stringValue: "test'\b\f\n\r\t\v\\\"" })
+  == "{ charValue: '\\'', stringValue: \"test'\\b\\f\\n\\r\\t\\v\\\\\\\"\" }" // Record Nested Special String and Char
 assert toString(box(('a', "test", 32))) == "box(('a', \"test\", 32))" // Nested Mixed Tuple
 assert toString(box(box(32))) == "box(box(32))" // Nested Box
 assert toString(box(box(box([1, 2, 3])))) == "box(box(box([1, 2, 3])))" // Deeply Nested Box
@@ -359,7 +387,6 @@ module Builtins {
     ]
   )
     == "[\n  1,\n  2,\n  3,\n  4,\n  5,\n  6,\n  7,\n  8,\n  9,\n  10,\n  11,\n  12,\n  13,\n  14,\n  15,\n  16,\n  17,\n  18,\n  19,\n  20,\n  21,\n  22,\n  23,\n]" // Multiline
-  // TODO: Long Long List
   // Range
   assert toString({ rangeStart: 1, rangeEnd: 2 })
     == "{ rangeStart: 1, rangeEnd: 2 }"
@@ -371,4 +398,12 @@ module Builtins {
   assert toString(Err(2)) == "Err(2)"
   // Box
   assert toString(box(1)) == "box(1)"
+}
+
+// Large Iterables
+module LargeIterables {
+  // Large list
+  assert String.length(toString(List.init(1000, i => i + 1))) == 6896
+  // Large array
+  assert String.length(toString(Array.init(1000, i => i + 1))) == 6897
 }

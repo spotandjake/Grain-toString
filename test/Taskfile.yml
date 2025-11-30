@@ -5,6 +5,7 @@ tasks:
   default:
     cmds:
       - grain toString.test.gr
+      - grain toStringNoTypeInfo.test.gr --elide-type-info
   sizeTest:
     cmds:
       - bash sizeDifference.sh

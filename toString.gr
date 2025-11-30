@@ -429,7 +429,7 @@ module Stringify {
           sep=(prev, next) => Doc.breakableSpace,
           trail=last => Doc.space,
           f=(final, (name, val)) => {
-            let val = taggedValue(val, state)
+            let val = taggedValue(val, { ...state, topLevel: false })
             let entry = Doc.group(
               Doc.string(name) ++ Doc.string(":") ++ Doc.space ++ val
             )
@@ -460,7 +460,7 @@ module Stringify {
           sep=(prev, next) => Doc.breakableSpace,
           trail=prev => Doc.empty,
           f=(final, val) => {
-            let value = value(val, state)
+            let value = value(val, { ...state, topLevel: false })
             if (final) {
               Doc.group(value) ++ Doc.trailingComma
             } else {
