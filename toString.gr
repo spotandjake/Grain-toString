@@ -70,46 +70,26 @@ let writeEscapedUSV = (
   isString: Bool,
   topLevel: Bool,
 ) => {
-  use WasmI32.{ (+) }
+  use WasmI32.{ (+), (==) }
   let mut ptr = ptr
-  match (usv) {
-    0x08n when !topLevel => { // \b
+  if (!topLevel) {
+    if (computeEscapedUSVLength(usv, isString, topLevel) == 2n) {
       ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-      ptr += writeUtf8CodePoint(ptr, 0x62n) // b
-    },
-    0x0Cn when !topLevel => { // \f
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-      ptr += writeUtf8CodePoint(ptr, 0x66n) // f
-    },
-    0x0An when !topLevel => { // \n
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-      ptr += writeUtf8CodePoint(ptr, 0x6En) // n
-    },
-    0x0Dn when !topLevel => { // \r
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-      ptr += writeUtf8CodePoint(ptr, 0x72n) // r
-    },
-    0x09n when !topLevel => { // \t
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-      ptr += writeUtf8CodePoint(ptr, 0x74n) // t
-    },
-    0x0Bn when !topLevel => { // \v
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-      ptr += writeUtf8CodePoint(ptr, 0x76n) // v
-    },
-    0x5Cn when !topLevel => {
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-    },
-    0x27n when !isString && !topLevel => { // \'
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-      ptr += writeUtf8CodePoint(ptr, 0x27n) // '
-    },
-    0x22n when isString && !topLevel => { // \"
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
-      ptr += writeUtf8CodePoint(ptr, 0x22n) // "
-    },
-    _ => ptr += writeUtf8CodePoint(ptr, usv),
+    }
+    ptr += writeUtf8CodePoint(ptr, match (usv) {
+      0x08n => 0x62n, // \b,
+      0x0Cn => 0x66n, // \f
+      0x0An => 0x6En, // \n
+      0x0Dn => 0x72n, // \r
+      0x09n => 0x74n, // \t
+      0x0Bn => 0x76n, // \v
+      0x5Cn => 0x5Cn, // \\
+      0x27n when !isString => 0x27n, // \'
+      0x22n when isString => 0x22n, // \"
+      _ => usv,
+    })
+  } else {
+    ptr += writeUtf8CodePoint(ptr, usv)
   }
   ptr
 }
@@ -351,12 +331,14 @@ module Stringify {
         ++ Doc.string(">>")
     }
     // Get The Heap Tag
-    let cycleStack = [val, ...state.cycleStack]
     let content = match (GrainValue.getHeapTag(val)) {
-      TupleTag(v) => tuple(v, { ...state, cycleStack }),
-      ArrayTag(v) => array(v, { ...state, cycleStack }),
-      RecordTag(v) => _record(v, { ...state, cycleStack }),
-      ADTTag(v) => adt(v, { ...state, cycleStack }),
+      TupleTag(v) =>
+        tuple(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
+      ArrayTag(v) =>
+        array(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
+      RecordTag(v) =>
+        _record(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
+      ADTTag(v) => adt(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
       ClosureTag(_) => Doc.string("<lambda>"),
       StringTag(v) => string(v, state),
       BytesTag(v) => bytes(v),
@@ -477,10 +459,13 @@ module Stringify {
           lead=next => Doc._break,
           sep=(prev, next) => Doc.breakableSpace,
           trail=prev => Doc.empty,
-          f=(final, val) => if (final) {
-            Doc.group(value(val, state)) ++ Doc.trailingComma
-          } else {
-            Doc.group(value(val, state) ++ Doc.comma)
+          f=(final, val) => {
+            let value = value(val, state)
+            if (final) {
+              Doc.group(value) ++ Doc.trailingComma
+            } else {
+              Doc.group(value ++ Doc.comma)
+            }
           },
           val
         )
@@ -490,10 +475,10 @@ module Stringify {
   }
   and adt = (val: GrainValue.ADTValue<a>, state) => {
     use Doc.{ (++) }
-    let (name, variantData) = GrainValue.getVariantData(val)
     if (GrainValue.isListVariant(val)) {
       list(magic(val): List<b>, { ...state, topLevel: false })
     } else {
+      let (name, variantData) = GrainValue.getVariantData(val)
       Doc.string(name) ++ match (variantData) {
         GrainValue.TupleVariant(vals) =>
           tupleHelp(vals, true, { ...state, topLevel: false }),

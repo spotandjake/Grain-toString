@@ -28,6 +28,7 @@ As the goal is to include this in the standard library it is critical that we ke
   + Test more complex cycle scenarios
 + Elided Type Info Testing
 + Performance Testing
+  + Currently quite a bit slower than the regular printer.
 + Discuss implementing this in the runtime with the core team.
 + Determine fate of `grainValue.gr`
   + My goal is to upstream some of this into the compiler [see here](https://github.com/grain-lang/grain/issues/2208). This will make such abstractions almost free.

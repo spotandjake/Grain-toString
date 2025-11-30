@@ -30,22 +30,36 @@ provide let make = size =>
     data: WasmI32.toGrain(allocateBytes(untagSimpleNumber(size))): Bytes,
     pos: 0,
   }
+
+@unsafe
+let autogrow = (buffer: MiniBuffer, addedSize: WasmI32) => {
+  use WasmI32.{ (+), (*), (>=), (<) }
+  let bufferPointer = WasmI32.fromGrain(buffer.data)
+  let mut bufferSize = WasmI32.load(bufferPointer, _BYTES_LEN_OFFSET)
+  let bufferPosition = untagSimpleNumber(buffer.pos)
+  let desiredSize = bufferPosition + addedSize
+  if (bufferSize >= desiredSize) return
+  while (bufferSize < desiredSize) bufferSize *= 2n
+  let newBufferPointer = allocateBytes(bufferSize)
+  Memory.copy(
+    newBufferPointer + _BYTES_DATA_OFFSET,
+    bufferPointer + _BYTES_DATA_OFFSET,
+    bufferSize
+  )
+  buffer.data = WasmI32.toGrain(newBufferPointer): Bytes
+  ignore(buffer.data)
+  return
+}
+
 @unsafe
 provide let addString = (str: String, buffer: MiniBuffer) => {
   use WasmI32.{ (*), (+), (<), (==) }
   let stringPointer = WasmI32.fromGrain(str)
   let stringSize = WasmI32.load(stringPointer, _STR_LEN_OFFSET)
   if (stringSize == 0n) return
+  autogrow(buffer, stringSize)
   let bufferPointer = WasmI32.fromGrain(buffer.data)
-  let mut bufferSize = WasmI32.load(bufferPointer, _BYTES_LEN_OFFSET)
   let bufferPosition = untagSimpleNumber(buffer.pos)
-  // Grow Buffer if needed
-  let desiredSize = bufferPosition + stringSize
-  if (bufferSize < desiredSize) {
-    while (bufferSize < desiredSize) bufferSize *= 2n
-    buffer.data = WasmI32.toGrain(allocateBytes(bufferSize)): Bytes
-  }
-  let bufferSize = WasmI32.load(bufferPointer, _BYTES_LEN_OFFSET)
   // Write String
   Memory.copy(
     bufferPointer + _BYTES_DATA_OFFSET + bufferPosition,
