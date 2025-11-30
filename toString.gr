@@ -331,15 +331,7 @@ module Stringify {
   let rec heapValueToString = (val: GrainValue.HeapValue<a>, state) => {
     use Doc.{ (++) }
     use WasmI32.{ (!=) }
-    // TODO: Handle cycles
-    // Store a mutable (boxed) map of visited nodes with their cycle index in the state
-    // Convert cycleStack to be a single list of visited nodes with their cycle index
-    // Only add recursive capable values to the cycle stack (i.e tuples, arrays, records, adts)
-    // If we find the cycle on the stack look up in the map and emit cycle to n
-    //   Set the cycle index to be n + 1 in the map (Boxed Associative list)
-    // Otherwise add to the stack
-    // Alternatively we talk to the core team about the importance of deterministic printing of cycles
-    // It would be far cleaner to just print the pointer value as the cycle id
+    // Check for Cycles
     if (isCycleInStack(val, state.cycleStack)) {
       let cycleMap = unbox(state.cycleMap)
       let cycleIndex = match (getCycleNumber(val, cycleMap)) {

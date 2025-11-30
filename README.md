@@ -23,11 +23,11 @@ As the goal is to include this in the standard library it is critical that we ke
 
 
 ## Still To Be Done
-+ Handle Cycles
-  + Discuss importance of cycle numbering with users? Maybe we change it to cycle id's in hex (i.e the pointer itself).
 + Nested Testing
   + Test more complex nesting scenarios
   + Test more complex cycle scenarios
++ Elided Type Info Testing
++ Performance Testing
 + Discuss implementing this in the runtime with the core team.
 + Determine fate of `grainValue.gr`
   + My goal is to upstream some of this into the compiler [see here](https://github.com/grain-lang/grain/issues/2208). This will make such abstractions almost free.

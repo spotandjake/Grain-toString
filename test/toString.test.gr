@@ -166,6 +166,21 @@ module HeapValues {
   assert toString(RecordEnum{ value: 1 }) == "RecordEnum{ value: 1, }" // Record Data
   assert toString(RecordEnum2{ value: 1, value2: 2 })
     == "RecordEnum2{ value: 1, value2: 2 }" // Record Multiple Data
+  provide enum PrintableADT {
+    PrintableFoo,
+    PrintableBar,
+    PrintableBaz(String),
+    PrintableQux(Number, String, Bool),
+    PrintableQuux,
+    PrintableFlip(String),
+  }
+  assert toString(PrintableFoo) == "PrintableFoo"
+  assert toString(PrintableBar) == "PrintableBar"
+  assert toString(PrintableBaz("baz")) == "PrintableBaz(\"baz\")"
+  assert toString(PrintableQux(5, "qux", false))
+    == "PrintableQux(5, \"qux\", false)"
+  assert toString(PrintableQuux) == "PrintableQuux"
+  assert toString(PrintableFlip("flip")) == "PrintableFlip(\"flip\")"
   // Exception - subcase of ADT
   exception TestException
   assert toString(TestException) == "TestException"

@@ -308,17 +308,25 @@ provide let (++) = (left, right) => {
 
   let hasGroupBreaker = hasGroupBreaker(left) || hasGroupBreaker(right)
 
-  let (flatWidth, breakingWidth) = if (hasGroupBreaker) {
-    let breakingWidth = add(breakingWidth(left), breakingWidth(right))
-    (breakingWidth, breakingWidth)
-  } else {
-    (
-      add(flatWidth(left), flatWidth(right)),
-      add(breakingWidth(left), breakingWidth(right)),
-    )
-  }
+  let breakingWidth = add(breakingWidth(left), breakingWidth(right))
 
-  Concat{ left, right, hasGroupBreaker, flatWidth, breakingWidth }
+  if (hasGroupBreaker) {
+    Concat{
+      left,
+      right,
+      hasGroupBreaker,
+      flatWidth: breakingWidth,
+      breakingWidth,
+    }
+  } else {
+    Concat{
+      left,
+      right,
+      hasGroupBreaker,
+      flatWidth: add(flatWidth(left), flatWidth(right)),
+      breakingWidth,
+    }
+  }
 }
 provide let concatMap = (sep, lead, trail, f, l) => {
   match (l) {
@@ -382,6 +390,11 @@ provide module Engine {
     mut broken: Bool,
   }
 
+  enum PrintInstruction {
+    Print(EngineGroup, LayoutNode),
+    UpdateIndent(EngineGroup, Number, Number),
+  }
+
   provide let print = (write, eol, lineWidth, doc) => {
     // The current column we're writing to
     let mut column = 0
@@ -405,113 +418,124 @@ provide module Engine {
       }
     }
 
-    let rec print = (group, doc) => {
-      match (k) {
-        Some(f) => {
-          k = None
-          f(doc)
-        },
-        None => void,
-      }
+    let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
+    let mut queue = [Print(group, doc)]
 
-      match (doc) {
-        Empty | GroupBreaker => void,
-        String{ value, width } => {
-          flushWriteQueue()
-          write(value)
-          column += widthValue(width)
-        },
-        Blank{ count } => {
-          flushWriteQueue()
-          write(buildSpaceString(count))
-          column += count
-        },
-        BreakHint{ doc, flatWidth: width } => {
-          let _break = () => {
-            group.broken = true
-            group.globalIndent = group.globalIndent + group.localIndent
-            group.localIndent = 0
-            write(eol)
-            writeQueue = Some(buildSpaceString(group.globalIndent))
-            column = group.globalIndent
-          }
-          match (group.mode) {
-            Flat => print(group=group, doc),
-            Breaking => _break(),
-            FitFlat => {
-              k = Some(nextDoc => {
-                let nextWidth = widthValue(flatWidth(nextDoc))
-                let hintWidth = widthValue(width)
-                if (column + hintWidth + nextWidth > lineWidth) {
-                  _break()
-                } else {
-                  print(group=group, doc)
-                }
-              })
+    while (true) {
+      match (queue) {
+        [] => break,
+        [Print(group, doc), ...rest] => {
+          queue = rest
+          match (k) {
+            Some(f) => {
+              k = None
+              f(doc)
             },
-            FitBreaking => {
-              k = Some(nextDoc => {
-                let nextWidth = widthValue(breakingWidth(nextDoc))
-                let hintWidth = widthValue(width)
-                if (column + hintWidth + nextWidth > lineWidth) {
-                  _break()
-                } else {
-                  print(group=group, doc)
-                }
-              })
+            None => void,
+          }
+
+          match (doc) {
+            Empty | GroupBreaker => void,
+            String{ value, width } => {
+              flushWriteQueue()
+              write(value)
+              column += widthValue(width)
+            },
+            Blank{ count } => {
+              flushWriteQueue()
+              write(buildSpaceString(count))
+              column += count
+            },
+            BreakHint{ doc, flatWidth: width } => {
+              let _break = () => {
+                group.broken = true
+                group.globalIndent = group.globalIndent + group.localIndent
+                group.localIndent = 0
+                write(eol)
+                writeQueue = Some(buildSpaceString(group.globalIndent))
+                column = group.globalIndent
+              }
+              match (group.mode) {
+                Flat => queue = [Print(group, doc), ...queue],
+                Breaking => _break(),
+                FitFlat => {
+                  k = Some(nextDoc => {
+                    let nextWidth = widthValue(flatWidth(nextDoc))
+                    let hintWidth = widthValue(width)
+                    if (column + hintWidth + nextWidth > lineWidth) {
+                      _break()
+                    } else {
+                      queue = [Print(group, doc), ...queue]
+                    }
+                  })
+                },
+                FitBreaking => {
+                  k = Some(nextDoc => {
+                    let nextWidth = widthValue(breakingWidth(nextDoc))
+                    let hintWidth = widthValue(width)
+                    if (column + hintWidth + nextWidth > lineWidth) {
+                      _break()
+                    } else {
+                      queue = [Print(group, doc), ...queue]
+                    }
+                  })
+                },
+              }
+            },
+            Hardline{ _ } => {
+              group.broken = true
+              group.globalIndent = group.globalIndent + group.localIndent
+              group.localIndent = 0
+              write(eol)
+              writeQueue = Some(buildSpaceString(group.globalIndent))
+              column = group.globalIndent
+            },
+            IfBroken{ flat, breaking, _ } => {
+              queue = [
+                Print(group, if (group.broken) breaking else flat),
+                ...queue
+              ]
+            },
+            Indent{ count, doc, _ } => {
+              let globalIndent = group.globalIndent
+              let localIndent = group.localIndent
+              group.localIndent = localIndent + count
+              queue = [
+                Print(group, doc),
+                UpdateIndent(group, globalIndent, localIndent),
+                ...queue
+              ]
+            },
+            Group{ doc, groupType, flatWidth, _ } => {
+              let width = widthValue(flatWidth)
+              let mode = match (groupType) {
+                _ when hasGroupBreaker(doc) => Breaking,
+                Auto when column + width > lineWidth => Breaking,
+                Auto => Flat,
+                FitGroups => FitFlat,
+                FitAll => FitBreaking,
+              }
+
+              let group = {
+                mode,
+                globalIndent: group.globalIndent,
+                localIndent: 0,
+                broken: hasGroupBreaker(doc),
+              }
+              queue = [Print(group, doc), ...queue]
+            },
+            Concat{ left, right, _ } => {
+              queue = [Print(group, left), Print(group, right), ...queue]
             },
           }
         },
-        Hardline{ _ } => {
-          group.broken = true
-          group.globalIndent = group.globalIndent + group.localIndent
-          group.localIndent = 0
-          write(eol)
-          writeQueue = Some(buildSpaceString(group.globalIndent))
-          column = group.globalIndent
-        },
-        IfBroken{ flat, breaking, _ } => {
-          if (group.broken) {
-            print(group=group, breaking)
-          } else {
-            print(group=group, flat)
-          }
-        },
-        Indent{ count, doc, _ } => {
-          let globalIndent = group.globalIndent
-          let localIndent = group.localIndent
-          group.localIndent = localIndent + count
-          print(group=group, doc)
+        [UpdateIndent(group, globalIndent, localIndent), ...rest] => {
+          queue = rest
           group.globalIndent = globalIndent
           group.localIndent = localIndent
         },
-        Group{ doc, groupType, flatWidth, _ } => {
-          let width = widthValue(flatWidth)
-          let mode = match (groupType) {
-            _ when hasGroupBreaker(doc) => Breaking,
-            Auto when column + width > lineWidth => Breaking,
-            Auto => Flat,
-            FitGroups => FitFlat,
-            FitAll => FitBreaking,
-          }
-
-          let group = {
-            mode,
-            globalIndent: group.globalIndent,
-            localIndent: 0,
-            broken: hasGroupBreaker(doc),
-          }
-          print(group=group, doc)
-        },
-        Concat{ left, right, _ } => {
-          print(group=group, left)
-          print(group=group, right)
-        },
       }
     }
-
-    let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
-    print(group=group, doc)
   }
 
   provide let toString = (eol, lineWidth, doc) => {
