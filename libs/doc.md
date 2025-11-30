@@ -198,7 +198,7 @@ A node that causes the enclosing group to be printed in Breaking mode.
 #### Doc.Builder.**string**
 
 ```grain
-string: (s: String) => LayoutNode
+string: (str: String) => LayoutNode
 ```
 
 A node that prints the char as-is. The `char`
@@ -208,7 +208,7 @@ Parameters:
 
 | param | type     | description         |
 | ----- | -------- | ------------------- |
-| `s`   | `String` | The string to print |
+| `str` | `String` | The string to print |
 
 Returns:
 

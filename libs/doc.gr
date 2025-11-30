@@ -275,6 +275,16 @@ let flatWidth = doc => {
   }
 }
 
+let addWidth = (left, right) => {
+  match (left) {
+    WithBreak(l) => left,
+    WithoutBreak(l) => match (right) {
+      WithBreak(r) => WithBreak(l + r),
+      WithoutBreak(r) => WithoutBreak(l + r),
+    },
+  }
+}
+
 let hasGroupBreaker = doc => {
   match (doc) {
     Concat{ hasGroupBreaker, _ } | Indent{ hasGroupBreaker, _ } =>
@@ -312,12 +322,12 @@ provide module Builder {
    * A node that prints the char as-is. The `char`
    * function is Utf8-aware.
    *
-   * @param s: The string to print
+   * @param str: The string to print
    *
    * @returns A LayoutNode that prints the string
    */
-  provide let string = s =>
-    String{ value: s, width: WithoutBreak(stringLength(s)) }
+  provide let string = str =>
+    String{ value: str, width: WithoutBreak(stringLength(str)) }
   /**
    * A node that prints the specified number of spaces.
    *
@@ -427,36 +437,36 @@ provide module Builder {
    * @returns A LayoutNode that concatenates the documents
    */
   provide let (++) = (left, right) => {
-    let add = (left, right) => {
-      match (left) {
-        WithBreak(l) => left,
-        WithoutBreak(l) => match (right) {
-          WithBreak(r) => WithBreak(l + r),
-          WithoutBreak(r) => WithoutBreak(l + r),
-        },
-      }
-    }
-
     let hasGroupBreaker = hasGroupBreaker(left) || hasGroupBreaker(right)
+    let breakingWidth = addWidth(breakingWidth(left), breakingWidth(right))
 
-    let breakingWidth = add(breakingWidth(left), breakingWidth(right))
+    Concat{
+      left,
+      right,
+      hasGroupBreaker,
+      flatWidth: if (hasGroupBreaker) {
+        breakingWidth
+      } else {
+        addWidth(flatWidth(left), flatWidth(right))
+      },
+      breakingWidth,
+    }
+  }
 
-    if (hasGroupBreaker) {
-      Concat{
-        left,
-        right,
-        hasGroupBreaker,
-        flatWidth: breakingWidth,
-        breakingWidth,
-      }
-    } else {
-      Concat{
-        left,
-        right,
-        hasGroupBreaker,
-        flatWidth: add(flatWidth(left), flatWidth(right)),
-        breakingWidth,
-      }
+  let rec concatMapHelp = (sep, trail, func, acc, lst) => {
+    match (lst) {
+      [] => throw Impossible("empty list in concatMap"),
+      [ultimate] =>
+        // one element list
+        acc ++ func(final=true, ultimate) ++ trail(ultimate),
+      [elem, next, ...rest] =>
+        concatMapHelp(
+          sep,
+          trail,
+          func,
+          acc ++ func(final=false, elem) ++ sep(elem, next),
+          [next, ...rest]
+        ),
     }
   }
   /**
@@ -474,29 +484,7 @@ provide module Builder {
   provide let concatMap = (sep, lead, trail, func, lst) => {
     match (lst) {
       [] => empty,
-      [first, ..._] => {
-        let rec concatMap = (acc, lst) => {
-          match (lst) {
-            [] => throw Impossible("empty list in concatMap"),
-            [ultimate] =>
-              // one element list
-              acc ++ func(final=true, ultimate) ++ trail(ultimate),
-            // TODO: Why is penultimate needed here?
-            [penultimate, ultimate] =>
-              acc
-                ++ func(final=false, penultimate)
-                ++ sep(penultimate, ultimate)
-                ++ func(final=true, ultimate)
-                ++ trail(ultimate),
-            [elem, next, ...rest] =>
-              concatMap(
-                acc ++ func(final=false, elem) ++ sep(elem, next),
-                [next, ...rest]
-              ),
-          }
-        }
-        concatMap(lead(first), lst)
-      },
+      [first, ..._] => concatMapHelp(sep, trail, func, lead(first), lst),
     }
   }
 
