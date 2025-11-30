@@ -248,6 +248,8 @@ let flatWidth = doc => {
 
 let hasGroupBreaker = doc => {
   match (doc) {
+    Concat{ hasGroupBreaker, _ } | Indent{ hasGroupBreaker, _ } =>
+      hasGroupBreaker,
     GroupBreaker => true,
     Empty |
     IfBroken{ _ } |
@@ -256,8 +258,6 @@ let hasGroupBreaker = doc => {
     Hardline{ _ } |
     Group{ _ } |
     String{ _ } => false,
-    Concat{ hasGroupBreaker, _ } | Indent{ hasGroupBreaker, _ } =>
-      hasGroupBreaker,
   }
 }
 
@@ -291,18 +291,29 @@ provide let indent = (count=2, doc) =>
     breakingWidth: breakingWidth(doc),
   }
 provide let group = (printWidth=None, kind=Auto, doc) => {
-  let (flatWidth, breakingWidth) = match (printWidth) {
-    Some(width) => (WithoutBreak(width), WithoutBreak(width)),
-    None => (flatWidth(doc), breakingWidth(doc)),
+  match (printWidth) {
+    Some(width) => {
+      let width = WithBreak(width)
+      Group{ groupType: kind, doc, flatWidth: width, breakingWidth: width }
+    },
+    None => {
+      Group{
+        groupType: kind,
+        doc,
+        flatWidth: flatWidth(doc),
+        breakingWidth: breakingWidth(doc),
+      }
+    },
   }
-  Group{ groupType: kind, doc, flatWidth, breakingWidth }
 }
 provide let (++) = (left, right) => {
   let add = (left, right) => {
-    match ((left, right)) {
-      (WithBreak(_), _) => left,
-      (WithoutBreak(l), WithoutBreak(r)) => WithoutBreak(l + r),
-      (WithoutBreak(l), WithBreak(r)) => WithBreak(l + r),
+    match (left) {
+      WithBreak(l) => left,
+      WithoutBreak(l) => match (right) {
+        WithBreak(r) => WithBreak(l + r),
+        WithoutBreak(r) => WithoutBreak(l + r),
+      },
     }
   }
 

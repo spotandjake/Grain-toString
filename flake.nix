@@ -10,6 +10,7 @@
         packages = pkgs: [
           pkgs.go-task # task command - script runner
           pkgs.wasmtime # Alternative wasm runner
+          pkgs.samply # Profiler for macos
         ];
       };
     });

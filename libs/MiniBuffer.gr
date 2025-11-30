@@ -32,9 +32,10 @@ provide let make = size =>
   }
 @unsafe
 provide let addString = (str: String, buffer: MiniBuffer) => {
-  use WasmI32.{ (*), (+), (<) }
+  use WasmI32.{ (*), (+), (<), (==) }
   let stringPointer = WasmI32.fromGrain(str)
   let stringSize = WasmI32.load(stringPointer, _STR_LEN_OFFSET)
+  if (stringSize == 0n) return
   let bufferPointer = WasmI32.fromGrain(buffer.data)
   let mut bufferSize = WasmI32.load(bufferPointer, _BYTES_LEN_OFFSET)
   let bufferPosition = untagSimpleNumber(buffer.pos)
@@ -54,6 +55,7 @@ provide let addString = (str: String, buffer: MiniBuffer) => {
   buffer.pos = tagSimpleNumber(bufferPosition + stringSize)
   ignore(str)
   ignore(buffer.data)
+  return
 }
 @unsafe
 provide let toString = (buffer: MiniBuffer) => {
