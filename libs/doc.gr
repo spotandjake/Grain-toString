@@ -51,8 +51,6 @@
       Has no effect on the output of the printing engine.
     • GroupBreaker
       Causes the enclosing group to be printed in Breaking mode.
-    • Char
-      Prints the char as-is. The `char` function is Utf8-aware.
     • String
       Prints the string as-is. The `string` function is Utf8-aware.
     • Blank
@@ -168,11 +166,19 @@ let buildSpaceString = count => {
   WasmI32.toGrain(ptr): String
 }
 
+/**
+ * End-of-line styles for the printing engine.
+ */
 provide enum EOL {
+  /** Carriage return + line feed */
   CRLF,
+  /** Line feed */
   LF,
 }
 
+/**
+ * The document IR used for printing.
+ */
 abstract enum rec LayoutNode {
   Empty,
   GroupBreaker,
@@ -207,11 +213,34 @@ abstract enum rec LayoutNode {
     breakingWidth: Width,
   },
 }
+/**
+ * The type of group to create.
+ */
 and provide enum GroupType {
+  /**
+   * The engine checks if the group would fit on the current line if printed
+   * in Flat mode. If so, it prints the group in Flat mode and Breaking mode
+   * otherwise.
+   */
   Auto,
+  /**
+   * The engine begins printing the group. When it encounters a break hint,
+   * it checks if the following node would fit on the current line. If that
+   * node is a Group, its Flat mode width is used for the check. If the node
+   * would not fit, a break is emitted.
+   */
   FitGroups,
+  /**
+   * The engine begins printing the group. When it encounters a break hint,
+   * it checks if the following node would fit on the current line. If that
+   * node is a Group, its Breaking mode width is used for the check. If the
+   * node would not fit, a break is emitted.
+   */
   FitAll,
 }
+/**
+ * Represents a width that may or may not account for line breaks.
+ */
 and abstract enum Width {
   WithBreak(Number),
   WithoutBreak(Number),
@@ -267,125 +296,299 @@ let widthValue = width => {
   }
 }
 
-provide let empty = Empty
-provide let groupBreaker = GroupBreaker
-provide let string = s =>
-  String{ value: s, width: WithoutBreak(stringLength(s)) }
-provide let blank = c => Blank{ count: c }
-let _break = doc => BreakHint{ doc, flatWidth: flatWidth(doc) }
-provide let hardline = Hardline{ phantom: false }
-provide let phantomHardline = Hardline{ phantom: true }
-provide let ifBroken = (breaking, flat) =>
-  IfBroken{
-    flat,
-    breaking,
-    flatWidth: flatWidth(flat),
-    breakingWidth: breakingWidth(breaking),
+/**
+ * Utilities for constructing the document IR.
+ */
+provide module Builder {
+  /**
+   * An empty node that has no effect on the output of the printing engine.
+   */
+  provide let empty = Empty
+  /**
+   * A node that causes the enclosing group to be printed in Breaking mode.
+   */
+  provide let groupBreaker = GroupBreaker
+  /**
+   * A node that prints the char as-is. The `char`
+   * function is Utf8-aware.
+   *
+   * @param s: The string to print
+   *
+   * @returns A LayoutNode that prints the string
+   */
+  provide let string = s =>
+    String{ value: s, width: WithoutBreak(stringLength(s)) }
+  /**
+   * A node that prints the specified number of spaces.
+   *
+   * @param c: The number of spaces to print
+   *
+   * @returns A LayoutNode that prints the spaces
+   */
+  provide let blank = c => Blank{ count: c }
+  /** Internal break hinting. */
+  let _break = doc => BreakHint{ doc, flatWidth: flatWidth(doc) }
+  /**
+   * A node that forces the engine to print a newline character.
+   * Width calculations for the current line are truncated at the Hardline.
+   */
+  provide let hardline = Hardline{ phantom: false }
+  /**
+   * A node that forces the engine to print a newline character.
+   * Width calculations for the current line are truncated at the Hardline.
+   * The Hardline is calculated as a zero-width non-breaking character (the
+   * newline is emitted in the output, but calculations assume it's just not
+   * there).
+   */
+  provide let phantomHardline = Hardline{ phantom: true }
+  /**
+   * Constructs a node where if the engine has broken the current group,
+   * prints the `breaking` document and prints the `flat` document otherwise.
+   * Note that for FitAll and FitGroups groups, the `flat` document would be
+   * printed if the IfBroken node appears before the point at which the group
+   * is broken, as the engine makes that decision while printing the group
+   * (unlike default groups, where the engine makes this decision before
+   * printing the group).
+   *
+   * @param breaking: The document to print if the group is broken
+   * @param flat: The document to print if the group is not broken
+   *
+   * @returns A LayoutNode that conditionally prints one of the documents
+   */
+  provide let ifBroken = (breaking, flat) =>
+    IfBroken{
+      flat,
+      breaking,
+      flatWidth: flatWidth(flat),
+      breakingWidth: breakingWidth(breaking),
+    }
+  /**
+   * Constructs a node that introduces indentation equal to the number of spaces
+   * specified when the enclosing group is broken. When newline characters are emitted,
+   * they are followed by space characters equal to the amount of indentation that has
+   * been applied by all groups, unless this would lead to trailing whitespace.
+   * Note that if the enclosing group has not been broken, the
+   * indentation will not apply. For example, in this document,
+   * ```grain
+   * group(~kind=FitGroups, indent(2,
+   *  group(indent(2, string("foo") ++ break ++ string("bar")))
+   * ))
+   * if the break hint is broken by the engine, `bar`'s indentation level will
+   * only be two spaces, as the outer group could never be broken be broken by
+   * the engine.
+   *
+   * @param count: The number of spaces to indent by (default: 2)
+   * @param doc: The document to indent
+   *
+   * @returns A LayoutNode that indents the document
+   */
+  provide let indent = (count=2, doc) =>
+    Indent{
+      count,
+      doc,
+      hasGroupBreaker: hasGroupBreaker(doc),
+      flatWidth: flatWidth(doc),
+      breakingWidth: breakingWidth(doc),
+    }
+  /**
+   * Constructs a node that creates a group around the supplied document,
+   * allowing the printing mode to be controlled.
+   *
+   * @param printWidth: An optional width to consider the group as when printing
+   * @param kind: The kind of group to create (default: Auto)
+   * @param doc: The document to group
+   *
+   * @returns A LayoutNode that groups the document
+   */
+  provide let group = (printWidth=None, kind=Auto, doc) => {
+    match (printWidth) {
+      Some(width) => {
+        let width = WithBreak(width)
+        Group{ groupType: kind, doc, flatWidth: width, breakingWidth: width }
+      },
+      None => {
+        Group{
+          groupType: kind,
+          doc,
+          flatWidth: flatWidth(doc),
+          breakingWidth: breakingWidth(doc),
+        }
+      },
+    }
   }
-provide let indent = (count=2, doc) =>
-  Indent{
-    count,
-    doc,
-    hasGroupBreaker: hasGroupBreaker(doc),
-    flatWidth: flatWidth(doc),
-    breakingWidth: breakingWidth(doc),
-  }
-provide let group = (printWidth=None, kind=Auto, doc) => {
-  match (printWidth) {
-    Some(width) => {
-      let width = WithBreak(width)
-      Group{ groupType: kind, doc, flatWidth: width, breakingWidth: width }
-    },
-    None => {
-      Group{
-        groupType: kind,
-        doc,
-        flatWidth: flatWidth(doc),
-        breakingWidth: breakingWidth(doc),
+  /**
+   * A node that prints the first document followed by the second document.
+   * While keeping track of the combined width to allow the engine to make
+   * constant-time decisions about line breaks.
+   *
+   * @param left: The first document
+   * @param right: The second document
+   *
+   * @returns A LayoutNode that concatenates the documents
+   */
+  provide let (++) = (left, right) => {
+    let add = (left, right) => {
+      match (left) {
+        WithBreak(l) => left,
+        WithoutBreak(l) => match (right) {
+          WithBreak(r) => WithBreak(l + r),
+          WithoutBreak(r) => WithoutBreak(l + r),
+        },
       }
-    },
+    }
+
+    let hasGroupBreaker = hasGroupBreaker(left) || hasGroupBreaker(right)
+
+    let breakingWidth = add(breakingWidth(left), breakingWidth(right))
+
+    if (hasGroupBreaker) {
+      Concat{
+        left,
+        right,
+        hasGroupBreaker,
+        flatWidth: breakingWidth,
+        breakingWidth,
+      }
+    } else {
+      Concat{
+        left,
+        right,
+        hasGroupBreaker,
+        flatWidth: add(flatWidth(left), flatWidth(right)),
+        breakingWidth,
+      }
+    }
   }
-}
-provide let (++) = (left, right) => {
-  let add = (left, right) => {
-    match (left) {
-      WithBreak(l) => left,
-      WithoutBreak(l) => match (right) {
-        WithBreak(r) => WithBreak(l + r),
-        WithoutBreak(r) => WithoutBreak(l + r),
+  /**
+   * Maps over a list, applying the given function to each element
+   * and concatenating the results.
+   *
+   * @param sep: A function that produces a separator to be placed between elements
+   * @param lead: A function that produces a leading document before the first element
+   * @param trail: A function that produces a trailing document after the last element
+   * @param func: A function that produces a document for each element
+   * @param lst: The list of elements to map over
+   *
+   * @returns A LayoutNode that represents the concatenated mapped documents
+   */
+  provide let concatMap = (sep, lead, trail, func, lst) => {
+    match (lst) {
+      [] => empty,
+      [first, ..._] => {
+        let rec concatMap = (acc, lst) => {
+          match (lst) {
+            [] => throw Impossible("empty list in concatMap"),
+            [ultimate] =>
+              // one element list
+              acc ++ func(final=true, ultimate) ++ trail(ultimate),
+            // TODO: Why is penultimate needed here?
+            [penultimate, ultimate] =>
+              acc
+                ++ func(final=false, penultimate)
+                ++ sep(penultimate, ultimate)
+                ++ func(final=true, ultimate)
+                ++ trail(ultimate),
+            [elem, next, ...rest] =>
+              concatMap(
+                acc ++ func(final=false, elem) ++ sep(elem, next),
+                [next, ...rest]
+              ),
+          }
+        }
+        concatMap(lead(first), lst)
       },
     }
   }
 
-  let hasGroupBreaker = hasGroupBreaker(left) || hasGroupBreaker(right)
-
-  let breakingWidth = add(breakingWidth(left), breakingWidth(right))
-
-  if (hasGroupBreaker) {
-    Concat{
-      left,
-      right,
-      hasGroupBreaker,
-      flatWidth: breakingWidth,
-      breakingWidth,
-    }
-  } else {
-    Concat{
-      left,
-      right,
-      hasGroupBreaker,
-      flatWidth: add(flatWidth(left), flatWidth(right)),
-      breakingWidth,
-    }
-  }
+  /**
+   * A node that represents a space that may be broken
+   * if necessary.
+   */
+  provide let breakableSpace = _break(blank(1))
+  /** A node that represents a break. */
+  provide let _break = _break(Empty)
+  /** A node that represents a space. */
+  provide let space = blank(1)
+  /** A node that represents a comma. */
+  provide let comma = string(",")
+  /** A node that represents a comma followed by a breakable space. */
+  provide let commaBreakableSpace = comma ++ breakableSpace
+  /**
+   * Constructs a node wrapping the given document in parentheses.
+   *
+   * @param wrap: An optional wrapping function to apply (default: group)
+   * @param doc: The document to wrap
+   *
+   * @returns A LayoutNode that wraps the document in parentheses
+   */
+  provide let parens = (wrap=doc => group(doc), doc) =>
+    wrap(string("(") ++ doc ++ string(")"))
+  /**
+   * Constructs a node wrapping the given document in braces.
+   *
+   * @param wrap: An optional wrapping function to apply (default: group)
+   * @param doc: The document to wrap
+   *
+   * @returns A LayoutNode that wraps the document in braces
+   */
+  provide let braces = (wrap=doc => group(doc), doc) =>
+    wrap(string("{") ++ doc ++ string("}"))
+  /**
+   * Constructs a node wrapping the given document in array brackets.
+   *
+   * @param wrap: An optional wrapping function to apply (default: group)
+   * @param doc: The document to wrap
+   *
+   * @returns A LayoutNode that wraps the document in array brackets
+   */
+  provide let arrayBrackets = (wrap=doc => group(doc), doc) =>
+    wrap(string("[>") ++ doc ++ string("]"))
+  /**
+   * Constructs a node wrapping the given document in list brackets.
+   *
+   * @param wrap: An optional wrapping function to apply (default: group)
+   * @param doc: The document to wrap
+   *
+   * @returns A LayoutNode that wraps the document in list brackets
+   */
+  provide let listBrackets = (wrap=doc => group(doc), doc) =>
+    wrap(string("[") ++ doc ++ string("]"))
+  /**
+   * Constructs a node wrapping the given document in angle brackets.
+   *
+   * @param wrap: An optional wrapping function to apply (default: group)
+   * @param doc: The document to wrap
+   *
+   * @returns A LayoutNode that wraps the document in angle brackets
+   */
+  provide let angleBrackets = (wrap=doc => group(doc), doc) =>
+    wrap(string("<") ++ doc ++ string(">"))
+  /**
+   * Constructs a node wrapping the given document in double quotes.
+   *
+   * @param doc: The document to wrap
+   *
+   * @returns A LayoutNode that wraps the document in double quotes
+   */
+  provide let doubleQuotes = doc => string("\"") ++ doc ++ string("\"")
+  /**
+   * Constructs a node wrapping the given document in single quotes.
+   *
+   * @param doc: The document to wrap
+   *
+   * @returns A LayoutNode that wraps the document in single quotes
+   */
+  provide let singleQuotes = doc => string("'") ++ doc ++ string("'")
+  /**
+   * A node that represents a trailing comma to be added if the
+   * current group is broken.
+   */
+  provide let trailingComma = ifBroken(comma, empty)
 }
-provide let concatMap = (sep, lead, trail, f, l) => {
-  match (l) {
-    [] => empty,
-    [first, ..._] => {
-      let rec concatMap = (acc, l) => {
-        match (l) {
-          [] => throw Impossible("empty list in concatMap"),
-          [ultimate] =>
-            // one element list
-            acc ++ f(final=true, ultimate) ++ trail(ultimate),
-          [penultimate, ultimate] =>
-            acc
-              ++ f(final=false, penultimate)
-              ++ sep(penultimate, ultimate)
-              ++ f(final=true, ultimate)
-              ++ trail(ultimate),
-          [elem, next, ...rest] =>
-            concatMap(
-              acc ++ f(final=false, elem) ++ sep(elem, next),
-              [next, ...rest]
-            ),
-        }
-      }
-      concatMap(lead(first), l)
-    },
-  }
-}
 
-provide let breakableSpace = _break(blank(1))
-provide let _break = _break(Empty)
-provide let space = blank(1)
-provide let comma = string(",")
-provide let commaBreakableSpace = comma ++ breakableSpace
-provide let parens = (wrap=doc => group(doc), doc) =>
-  wrap(string("(") ++ doc ++ string(")"))
-provide let braces = (wrap=doc => group(doc), doc) =>
-  wrap(string("{") ++ doc ++ string("}"))
-provide let arrayBrackets = (wrap=doc => group(doc), doc) =>
-  wrap(string("[>") ++ doc ++ string("]"))
-provide let listBrackets = (wrap=doc => group(doc), doc) =>
-  wrap(string("[") ++ doc ++ string("]"))
-provide let angleBrackets = (wrap=doc => group(doc), doc) =>
-  wrap(string("<") ++ doc ++ string(">"))
-provide let doubleQuotes = doc => string("\"") ++ doc ++ string("\"")
-provide let singleQuotes = doc => string("'") ++ doc ++ string("'")
-provide let trailingComma = ifBroken(comma, empty)
-
+/**
+ * The printing engine for LayoutNode documents.
+ */
 provide module Engine {
   enum EngineMode {
     Flat,
@@ -406,6 +609,16 @@ provide module Engine {
     UpdateIndent(EngineGroup, Number, Number),
   }
 
+  /**
+   * Prints the given document using the provided write function.
+   *
+   * @param write: A function that takes a string and writes it to an output
+   * @param eol: The end-of-line style to use
+   * @param lineWidth: The maximum line width to use
+   * @param doc: The document to print
+   *
+   * @returns Void
+   */
   provide let print = (write, eol, lineWidth, doc) => {
     // The current column we're writing to
     let mut column = 0
@@ -549,6 +762,16 @@ provide module Engine {
     }
   }
 
+  /**
+   * Converts the given document to a string using the specified
+   * end-of-line style and line width.
+   *
+   * @param eol: The end-of-line style to use
+   * @param lineWidth: The maximum line width to use
+   * @param doc: The document to convert to a string
+   *
+   * @returns The string representation of the document
+   */
   provide let toString = (eol, lineWidth, doc) => {
     let b = MiniBuffer.make(2048)
     let write = str => MiniBuffer.addString(str, b)

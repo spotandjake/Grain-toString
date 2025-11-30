@@ -9,6 +9,10 @@ tasks:
   sizeTest:
     cmds:
       - bash sizeDifference.sh
+  perf:
+    cmds:
+      - grain compile perf.gr --wat
+      - wasmtime --profile=guest perf.wasm
   format:
     cmds:
       - grain format . -o .

@@ -27,15 +27,7 @@ Represents a generic grain heap value.
 type ShortValue<a>
 ```
 
-Represents a generic grain short value.
-
-### GrainValue.**UnknownValue**
-
-```grain
-type UnknownValue<a>
-```
-
-Represents an unknown value.
+Represents a generic short value.
 
 ### GrainValue.**ConstantValue**
 
@@ -43,7 +35,7 @@ Represents an unknown value.
 type ConstantValue<a>
 ```
 
-Represents a generic grain constant value.
+Represents a generic constant value.
 
 ### GrainValue.**TupleValue**
 
@@ -51,7 +43,7 @@ Represents a generic grain constant value.
 type TupleValue<a>
 ```
 
-Represents a generic grain tuple value.
+Represents a generic tuple value.
 
 ### GrainValue.**RecordValue**
 
@@ -59,7 +51,7 @@ Represents a generic grain tuple value.
 type RecordValue<a>
 ```
 
-Represents a generic grain record value.
+Represents a generic record value.
 
 ### GrainValue.**ADTValue**
 
@@ -67,7 +59,7 @@ Represents a generic grain record value.
 type ADTValue<a>
 ```
 
-Represents a generic grain ADT value.
+Represents a generic ADT value.
 
 ### GrainValue.**LambdaValue**
 
@@ -75,7 +67,7 @@ Represents a generic grain ADT value.
 type LambdaValue<a>
 ```
 
-Represents a generic grain lambda value.
+Represents a generic lambda value.
 
 ### GrainValue.**NumberTag**
 
@@ -90,7 +82,7 @@ enum NumberTag {
 }
 ```
 
-Represents a tagged grain number value.
+Represents a tagged number value.
 
 ### GrainValue.**StackTag**
 
@@ -104,7 +96,7 @@ enum StackTag<a> {
 }
 ```
 
-Represents a tagged grain stack value.
+Represents a tagged stack value.
 
 Note: The `a` is `forall a`, meaning we never want to unify it.
 
@@ -160,7 +152,7 @@ enum HeapTag<a> {
 }
 ```
 
-Represents a tagged grain heap value.
+Represents a tagged heap value.
 
 Note: The `a` is `forall a`, meaning we never want to unify it.
 
@@ -177,7 +169,7 @@ enum ShortTag {
 }
 ```
 
-Represents a tagged grain short value.
+Represents a tagged short value.
 
 Note: The `a` is `forall a`, meaning we never want to unify it.
 
@@ -275,19 +267,19 @@ isHeapValue: (a: a) => Bool
 getTag: (value: a) => StackTag<b>
 ```
 
-Provides a tagged stack value based on the grain value type.
+Provides a tagged stack value based on the value type.
 
 Parameters:
 
-| param   | type | description             |
-| ------- | ---- | ----------------------- |
-| `value` | `a`  | The grain value to tag. |
+| param   | type | description      |
+| ------- | ---- | ---------------- |
+| `value` | `a`  | The value to tag |
 
 Returns:
 
-| type          | description                                                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `StackTag<b>` | A tagged grain value that can be used to extract the value information.<br/><br/>Note: The `a` is `forall a`, meaning we never want to unify it. |
+| type          | description                                                                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `StackTag<b>` | A tagged value that can be used to extract the value information<br/><br/>Note: The `a` is `forall a`, meaning we never want to unify it. |
 
 ### GrainValue.**getHeapTag**
 
@@ -295,19 +287,19 @@ Returns:
 getHeapTag: (value: HeapValue<a>) => HeapTag<b>
 ```
 
-Provides a tagged heap value based on the grain value type.
+Provides a tagged heap value based on the value type.
 
 Parameters:
 
-| param   | type           | description                  |
-| ------- | -------------- | ---------------------------- |
-| `value` | `HeapValue<a>` | The grain heap value to tag. |
+| param   | type           | description           |
+| ------- | -------------- | --------------------- |
+| `value` | `HeapValue<a>` | The heap value to tag |
 
 Returns:
 
-| type         | description                                                                                                                                           |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HeapTag<b>` | A tagged grain heap value that can be used to extract the value information.<br/><br/>Note: The `a` is `forall a`, meaning we never want to unify it. |
+| type         | description                                                                                                                                    |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HeapTag<b>` | A tagged heap value that can be used to extract the value information<br/><br/>Note: The `a` is `forall a`, meaning we never want to unify it. |
 
 ### GrainValue.**getNumberTag**
 
@@ -315,19 +307,19 @@ Returns:
 getNumberTag: (value: Number) => NumberTag
 ```
 
-Provides a tagged number value based on the grain value type.
+Provides a tagged number value based on the value type.
 
 Parameters:
 
-| param   | type     | description                    |
-| ------- | -------- | ------------------------------ |
-| `value` | `Number` | The grain number value to tag. |
+| param   | type     | description             |
+| ------- | -------- | ----------------------- |
+| `value` | `Number` | The number value to tag |
 
 Returns:
 
-| type        | description                                                                    |
-| ----------- | ------------------------------------------------------------------------------ |
-| `NumberTag` | A tagged grain number value that can be used to extract the value information. |
+| type        | description                                                             |
+| ----------- | ----------------------------------------------------------------------- |
+| `NumberTag` | A tagged number value that can be used to extract the value information |
 
 ### GrainValue.**getShortTag**
 
@@ -335,19 +327,19 @@ Returns:
 getShortTag: (value: ShortValue<a>) => ShortTag
 ```
 
-Provides a tagged short value based on the grain value type.
+Provides a tagged short value based on the value type.
 
 Parameters:
 
-| param   | type            | description                   |
-| ------- | --------------- | ----------------------------- |
-| `value` | `ShortValue<a>` | The grain short value to tag. |
+| param   | type            | description            |
+| ------- | --------------- | ---------------------- |
+| `value` | `ShortValue<a>` | The short value to tag |
 
 Returns:
 
-| type       | description                                                                                                                                            |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ShortTag` | A tagged grain short value that can be used to extract the value information.<br/><br/>Note: The `a` is `forall a`, meaning we never want to unify it. |
+| type       | description                                                                                                                                     |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ShortTag` | A tagged short value that can be used to extract the value information<br/><br/>Note: The `a` is `forall a`, meaning we never want to unify it. |
 
 ### GrainValue.**getTupleData**
 
@@ -359,9 +351,9 @@ Provides the tuples tagged contents.
 
 Parameters:
 
-| param   | type            | description                                       |
-| ------- | --------------- | ------------------------------------------------- |
-| `value` | `TupleValue<a>` | The tagged grain tuple value to extract data from |
+| param   | type            | description                                 |
+| ------- | --------------- | ------------------------------------------- |
+| `value` | `TupleValue<a>` | The tagged tuple value to extract data from |
 
 Returns:
 
@@ -379,9 +371,9 @@ Provides the array's tagged contents.
 
 Parameters:
 
-| param   | type       | description                                       |
-| ------- | ---------- | ------------------------------------------------- |
-| `value` | `Array<a>` | The tagged grain array value to extract data from |
+| param   | type       | description                                 |
+| ------- | ---------- | ------------------------------------------- |
+| `value` | `Array<a>` | The tagged array value to extract data from |
 
 Returns:
 
@@ -461,11 +453,39 @@ getInt32Value: (value: Int32) => WasmI32
 getInt64Value: (value: Int64) => WasmI64
 ```
 
+Extracts the unsafe value from a Grain Int64.
+
+Parameters:
+
+| param   | type    | description        |
+| ------- | ------- | ------------------ |
+| `value` | `Int64` | The value to extra |
+
+Returns:
+
+| type      | description      |
+| --------- | ---------------- |
+| `WasmI64` | The unsafe value |
+
 ### GrainValue.**getUint32Value**
 
 ```grain
 getUint32Value: (value: Uint32) => WasmI32
 ```
+
+Extracts the unsafe value from a Grain Uint32.
+
+Parameters:
+
+| param   | type     | description          |
+| ------- | -------- | -------------------- |
+| `value` | `Uint32` | The value to extract |
+
+Returns:
+
+| type      | description      |
+| --------- | ---------------- |
+| `WasmI32` | The unsafe value |
 
 ### GrainValue.**getUint64Value**
 
@@ -473,15 +493,57 @@ getUint32Value: (value: Uint32) => WasmI32
 getUint64Value: (value: Uint64) => WasmI64
 ```
 
+Extracts the unsafe value from a Grain Uint64.
+
+Parameters:
+
+| param   | type     | description          |
+| ------- | -------- | -------------------- |
+| `value` | `Uint64` | The value to extract |
+
+Returns:
+
+| type      | description      |
+| --------- | ---------------- |
+| `WasmI64` | The unsafe value |
+
 ### GrainValue.**getFloat32Value**
 
 ```grain
 getFloat32Value: (value: Float32) => WasmF32
 ```
 
+Extracts the unsafe value from a Grain Float32.
+
+Parameters:
+
+| param   | type      | description          |
+| ------- | --------- | -------------------- |
+| `value` | `Float32` | The value to extract |
+
+Returns:
+
+| type      | description      |
+| --------- | ---------------- |
+| `WasmF32` | The unsafe value |
+
 ### GrainValue.**getFloat64Value**
 
 ```grain
 getFloat64Value: (value: Float64) => WasmF64
 ```
+
+Extracts the unsafe value from a Grain Float64.
+
+Parameters:
+
+| param   | type      | description          |
+| ------- | --------- | -------------------- |
+| `value` | `Float64` | The value to extract |
+
+Returns:
+
+| type      | description      |
+| --------- | ---------------- |
+| `WasmF64` | The unsafe value |
 

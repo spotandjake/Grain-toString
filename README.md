@@ -1,6 +1,8 @@
 # Grain String
 
-This library is an experimental rewrite of grain's internal `toString` function, it is being designed as a standalone library with the future goal of being merged into the runtime.
+This library is an experimental rewrite of grain's internal `toString` function, it is being designed as a standalone library with the future goal of being merged into the runtime. 
+
+This library has been developed and is maintained for `0.7.x`.
 
 ## Why
 One of grain's staple features is it's amazing `print` and `toString` function, that enables amazing developer experience. However the current `print` implementation starts to become messy when working with large dataStructures such as big lists, nested dataStructures and any other larger collection of data. This is mostly because of verboseness in the output large lists get printed on a single line which makes it hard to distinguish between 
@@ -25,22 +27,17 @@ Additionally all optimization efforts have tried to avoid making `./libs/doc.gr`
 
 Additionally I make use of a helper `./libs/grainValue.gr` library which lets me abstract away a lot of the lower level unsafe logic from the implementation itself this comes at the cost of size and performance but it makes this library far easier to maintain, hopefully some of the functions such as runtime tagging functions could be moved into the compiler directly see [grain#2228](https://github.com/grain-lang/grain/issues/2208) for more info on that, this would reduce bundle size significantly and improve performance in some areas, if the work doesn't move into the compiler `grainValue.gr` could be stripped out raising performance and reducing bundle size at the cost of maintainability. 
 
-
 ## Still To Be Done
-+ Nested Testing
++ Tests
   + Test more complex nesting scenarios
-  + Test more complex cycle scenarios
-+ Performance Testing
-  + Most performance bottlenecks seem to be in `Doc.(++)` and `Doc.concatMap`, due to the allocations and number of calls. It seems that switching to wasm-gc would greatly improve performance however negating a lot of the allocation overhead we are seeing.
-+ Discuss implementing this in the runtime with the core team.
   + Determine fate of `grainValue.gr`
++ Discuss implementing this in the runtime with the core team.
 + Shrink bundle size
   + Wasm-gc should shrink this significantly (compiler)
   + Global initialization optimization (compiler)
   + Determining the fate of `grainValue.gr` should shrink things (possibly compiler)
-+ Fully Document `doc.gr`
-+ Fully Document `toString.gr`
-+ Fully Document `grainValue.gr`
++ Improve Performance
+  + Most performance bottlenecks seem to be in `Doc.(++)` and `Doc.concatMap`, due to the allocations and number of calls. It seems that switching to wasm-gc would greatly improve performance however negating a lot of the allocation overhead we are seeing.
 
 ## Future Experiments
 + It would be interesting to allow some sort of colored printing.

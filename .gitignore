@@ -6,6 +6,9 @@
 # Nix
 .direnv/
 
+# Profiling
+wasmtime-guest-profile.json
+
 # Mac
 .DS_Store
 local/

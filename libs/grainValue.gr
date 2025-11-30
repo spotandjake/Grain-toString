@@ -68,13 +68,6 @@ primitive ignore = "@ignore"
 primitive throw = "@throw"
 
 @unsafe
-let _ADT_ARITY_OFFSET = 16n
-@unsafe
-let _ADT_DATA_OFFSET = 20n
-@unsafe
-let _ADT_ITEM_SIZE = 4n
-
-@unsafe
 let _LIST_ID = untagSimpleNumber(builtinId("List"))
 @unsafe
 let _OPTION_ID = untagSimpleNumber(builtinId("Option"))
@@ -85,23 +78,21 @@ let _RANGE_ID = untagSimpleNumber(builtinId("Range"))
 
 /** Represents a generic grain heap value. */
 abstract type HeapValue<a> = a
-/** Represents a generic grain short value. */
+/** Represents a generic short value. */
 abstract type ShortValue<a> = a
-/** Represents an unknown value. */
-abstract type UnknownValue<a> = a
-/** Represents a generic grain constant value. */
+/** Represents a generic constant value. */
 abstract type ConstantValue<a> = a
-/** Represents a generic grain tuple value. */
+/** Represents a generic tuple value. */
 abstract type TupleValue<a> = a
-/** Represents a generic grain record value. */
+/** Represents a generic record value. */
 abstract type RecordValue<a> = a
-/** Represents a generic grain ADT value. */
+/** Represents a generic ADT value. */
 abstract type ADTValue<a> = a
-/** Represents a generic grain lambda value. */
+/** Represents a generic lambda value. */
 abstract type LambdaValue<a> = a
 
 /**
- * Represents a tagged grain number value.
+ * Represents a tagged number value.
  */
 provide enum NumberTag {
   SimpleNumberTag(Number),
@@ -113,7 +104,7 @@ provide enum NumberTag {
 }
 
 /**
- * Represents a tagged grain stack value.
+ * Represents a tagged stack value.
  *
  * Note: The `a` is `forall a`, meaning we never want to unify it.
  */
@@ -131,7 +122,7 @@ provide enum StackTag<a> {
 }
 
 /**
- * Represents a tagged grain heap value.
+ * Represents a tagged heap value.
  *
  * Note: The `a` is `forall a`, meaning we never want to unify it.
  */
@@ -152,7 +143,7 @@ provide enum HeapTag<a> {
 }
 
 /**
- * Represents a tagged grain short value.
+ * Represents a tagged short value.
  *
  * Note: The `a` is `forall a`, meaning we never want to unify it.
  */
@@ -194,11 +185,11 @@ let isShortValue = a => {
 }
 
 /**
- * Provides a tagged stack value based on the grain value type.
+ * Provides a tagged stack value based on the value type.
  *
- * @param value: The grain value to tag.
+ * @param value: The value to tag
  *
- * @returns A tagged grain value that can be used to extract the value information.
+ * @returns A tagged value that can be used to extract the value information
  *
  * Note: The `a` is `forall a`, meaning we never want to unify it.
  */
@@ -218,11 +209,11 @@ provide let getTag = (value: a) => {
 }
 
 /**
- * Provides a tagged heap value based on the grain value type.
+ * Provides a tagged heap value based on the value type.
  *
- * @param value: The grain heap value to tag.
+ * @param value: The heap value to tag
  *
- * @returns A tagged grain heap value that can be used to extract the value information.
+ * @returns A tagged heap value that can be used to extract the value information
  *
  * Note: The `a` is `forall a`, meaning we never want to unify it.
  */
@@ -261,11 +252,11 @@ provide let getHeapTag = (value: HeapValue<a>) => {
 }
 
 /**
- * Provides a tagged number value based on the grain value type.
+ * Provides a tagged number value based on the value type.
  *
- * @param value: The grain number value to tag.
+ * @param value: The number value to tag
  *
- * @returns A tagged grain number value that can be used to extract the value information.
+ * @returns A tagged number value that can be used to extract the value information
  */
 @unsafe
 provide let getNumberTag = (value: Number) => {
@@ -317,11 +308,11 @@ let isUInt16 = a => {
 }
 
 /**
- * Provides a tagged short value based on the grain value type.
+ * Provides a tagged short value based on the value type.
  *
- * @param value: The grain short value to tag.
+ * @param value: The short value to tag
  *
- * @returns A tagged grain short value that can be used to extract the value information.
+ * @returns A tagged short value that can be used to extract the value information
  *
  * Note: The `a` is `forall a`, meaning we never want to unify it.
  */
@@ -345,7 +336,7 @@ provide let getShortTag = (value: ShortValue<a>) => {
 /**
  * Provides the tuples tagged contents.
  *
- * @param value: The tagged grain tuple value to extract data from
+ * @param value: The tagged tuple value to extract data from
  *
  * @returns A list of tagged values representing the tuple's fields
  */
@@ -366,7 +357,7 @@ provide let getTupleData = (value: TupleValue<a>) => {
 /**
  * Provides the array's tagged contents.
  *
- * @param value: The tagged grain array value to extract data from
+ * @param value: The tagged array value to extract data from
  *
  * @returns A list of tagged values representing the array's elements
  */
@@ -385,6 +376,9 @@ provide let getArrayData = (value: Array<a>) => {
   vals
 }
 
+/**
+ * Provides utilities for accessing type metadata.
+ */
 module TypeMetaData {
   @unsafe
   primitive typeMetadata = "@heap.type_metadata"
@@ -729,6 +723,13 @@ provide let getInt32Value = (value: Int32) => {
   num
 }
 
+/**
+ * Extracts the unsafe value from a Grain Int64.
+ *
+ * @param value: The value to extra
+ *
+ * @returns The unsafe value
+ */
 @unsafe
 provide let getInt64Value = (value: Int64) => {
   let ptr = WasmI32.fromGrain(value)
@@ -737,6 +738,13 @@ provide let getInt64Value = (value: Int64) => {
   num
 }
 
+/**
+ * Extracts the unsafe value from a Grain Uint32.
+ *
+ * @param value: The value to extract
+ *
+ * @returns The unsafe value
+ */
 @unsafe
 provide let getUint32Value = (value: Uint32) => {
   let ptr = WasmI32.fromGrain(value)
@@ -745,6 +753,13 @@ provide let getUint32Value = (value: Uint32) => {
   num
 }
 
+/**
+ * Extracts the unsafe value from a Grain Uint64.
+ *
+ * @param value: The value to extract
+ *
+ * @returns The unsafe value
+ */
 @unsafe
 provide let getUint64Value = (value: Uint64) => {
   let ptr = WasmI32.fromGrain(value)
@@ -753,6 +768,13 @@ provide let getUint64Value = (value: Uint64) => {
   num
 }
 
+/**
+ * Extracts the unsafe value from a Grain Float32.
+ *
+ * @param value: The value to extract
+ *
+ * @returns The unsafe value
+ */
 @unsafe
 provide let getFloat32Value = (value: Float32) => {
   let ptr = WasmI32.fromGrain(value)
@@ -761,6 +783,13 @@ provide let getFloat32Value = (value: Float32) => {
   num
 }
 
+/**
+ * Extracts the unsafe value from a Grain Float64.
+ *
+ * @param value: The value to extract
+ *
+ * @returns The unsafe value
+ */
 @unsafe
 provide let getFloat64Value = (value: Float64) => {
   let ptr = WasmI32.fromGrain(value)

@@ -8,6 +8,13 @@
  * Original contributions by Jake Follest are MIT licensed, but redistribution
  * must comply with the GPL where the GPL code is used.
  */
+
+/**
+ * Module for converting Grain values to their string representations.
+ *
+ * @example toString(true) == "true"
+ * @example toString(123) == "123"
+ */
 @noPervasives
 module ToString
 
@@ -54,6 +61,7 @@ primitive magic = "@magic"
 primitive box = "@box"
 primitive unbox = "@unbox"
 
+// Computes the escaped length of a usv
 @unsafe
 let computeEscapedUSVLength = (usv: WasmI32, isString: Bool, topLevel: Bool) => {
   match (usv) {
@@ -63,6 +71,8 @@ let computeEscapedUSVLength = (usv: WasmI32, isString: Bool, topLevel: Bool) => 
     _ => usvEncodeLength(usv),
   }
 }
+
+// Writes an escaped usv to the given pointer
 @unsafe
 let writeEscapedUSV = (
   usv: WasmI32,
@@ -94,6 +104,7 @@ let writeEscapedUSV = (
   ptr
 }
 
+// Determines if a heap value is in the current cycle stack
 @unsafe
 let rec isCycleInStack = (
   value: GrainValue.HeapValue<a>,
@@ -108,6 +119,7 @@ let rec isCycleInStack = (
   }
 }
 
+// Determines the cycle number of a heap value
 @unsafe
 let rec getCycleNumber = (
   value: GrainValue.HeapValue<a>,
@@ -120,20 +132,43 @@ let rec getCycleNumber = (
   }
 }
 
-// Specific stringification functions for various data types
+/**
+ * A container for the stringification logic.
+ *
+ * This can be exposed if we ever want to allow using the individual data type
+ * stringification functions externally.
+ */
 module Stringify {
   // Settings
   @unsafe
   let defaultRadix = 10n // The default radix for numbers
+  /**
+   * State used during stringification to track cycles and context.
+   */
   abstract record StringifyState<a> {
+    /** Indicates if we are currently stringifying the top-level value. */
     topLevel: Bool,
+    /** The current stack of heap values being stringified to detect cycles. */
     cycleStack: List<GrainValue.HeapValue<a>>,
+    /** A map of heap values to their cycle numbers. */
     cycleMap: Box<List<(GrainValue.HeapValue<a>, Number)>>,
   }
+  /**
+   * Creates an initial empty stringification state.
+   *
+   * @returns An empty stringification state
+   */
   provide let emptyState = () =>
     { topLevel: true, cycleStack: [], cycleMap: box([]) }
 
   // Heap Values
+  /**
+   * Converts a String value to its string representation.
+   *
+   * @param val: The String value to convert
+   *
+   * @returns A document layout representing the stringified String value
+   */
   @unsafe
   provide let string = (val: String, state) => {
     use WasmI32.{ (+), (-), (>) }
@@ -162,17 +197,24 @@ module Stringify {
       currentPtr += usvSize
       escapedPtr = writeEscapedUSV(usv, escapedPtr, true, state.topLevel)
     }
-    let content = Doc.string(WasmI32.toGrain(escapedStr): String)
+    let content = Doc.Builder.string(WasmI32.toGrain(escapedStr): String)
     ignore(val)
     if (state.topLevel) {
       content
     } else {
-      Doc.doubleQuotes(content)
+      Doc.Builder.doubleQuotes(content)
     }
   }
+  /**
+   * Converts a Bytes value to its string representation.
+   *
+   * @param val: The Bytes value to convert
+   *
+   * @returns A document layout representing the stringified Bytes value
+   */
   @unsafe
   provide let bytes = (val: Bytes) => {
-    use Doc.{ (++) }
+    use Doc.Builder.{ (++) }
     use WasmI32.{ (+), (-), (*), (<), (>) }
     let mut ptr = WasmI32.fromGrain(val)
     let len = WasmI32.load(ptr, _BYTES_LEN_OFFSET)
@@ -189,25 +231,37 @@ module Stringify {
       WasmI32.store16(strOffset, WasmI32.load16U(hex, n), i * 3n)
     }
     ignore(val)
-    let content = Doc.string(WasmI32.toGrain(str): String)
-    let content = if (len < 32n) content else content ++ Doc.string("...")
-    Doc.angleBrackets(Doc.string("bytes: ") ++ content)
+    let content = Doc.Builder.string(WasmI32.toGrain(str): String)
+    let content = if (len < 32n)
+      content
+    else
+      content ++ Doc.Builder.string("...")
+    Doc.Builder.angleBrackets(Doc.Builder.string("bytes: ") ++ content)
   }
+  /**
+   * Converts a Number value to its string representation.
+   *
+   * @param val: The Number value to convert
+   *
+   * @returns A document layout representing the stringified Number value
+   */
   @unsafe
   provide let number = (val: Number) => {
     match (GrainValue.getNumberTag(val)) {
       GrainValue.SimpleNumberTag(v) =>
-        Doc.string(NumberUtils.itoa32(untagSimpleNumber(v), defaultRadix)),
+        Doc.Builder.string(
+          NumberUtils.itoa32(untagSimpleNumber(v), defaultRadix)
+        ),
       GrainValue.Int64Tag(v) => {
         let num = GrainValue.getInt64Value(v)
-        Doc.string(NumberUtils.itoa64(num, defaultRadix))
+        Doc.Builder.string(NumberUtils.itoa64(num, defaultRadix))
       },
       GrainValue.Float64Tag(v) => {
         let num = GrainValue.getFloat64Value(v)
-        Doc.string(NumberUtils.dtoa(num))
+        Doc.Builder.string(NumberUtils.dtoa(num))
       },
       GrainValue.RationalTag(v) => {
-        use Doc.{ (++) }
+        use Doc.Builder.{ (++) }
         let ptr = WasmI32.fromGrain(v)
         let numerator = Bigint.bigIntToString(
           WasmI32.load(ptr, _RATIONAL_NUMERATOR_OFFSET),
@@ -218,39 +272,76 @@ module Stringify {
           defaultRadix
         )
         ignore(v)
-        Doc.string(numerator) ++ Doc.string("/") ++ Doc.string(denominator)
+        Doc.Builder.string(numerator)
+          ++ Doc.Builder.string("/")
+          ++ Doc.Builder.string(denominator)
       },
       GrainValue.BigIntTag(v) => {
         let ptr = WasmI32.fromGrain(v)
         let str = Bigint.bigIntToString(ptr, defaultRadix)
         ignore(v)
-        Doc.string(str)
+        Doc.Builder.string(str)
       },
-      GrainValue.UnknownNumberTag => Doc.string("<unknown number>"),
+      GrainValue.UnknownNumberTag => Doc.Builder.string("<unknown number>"),
     }
   }
+  /**
+   * Converts an Int32 value to its string representation.
+   *
+   * @param val: The Int32 value to convert
+   *
+   * @returns A document layout representing the stringified Int32 value
+   */
   @unsafe
   provide let int32 = (val: Int32) => {
     let num = GrainValue.getInt32Value(val)
-    Doc.string(NumberUtils.itoa32(num, defaultRadix))
+    Doc.Builder.string(NumberUtils.itoa32(num, defaultRadix))
   }
+  /**
+   * Converts a Float32 value to its string representation.
+   *
+   * @param val: The Float32 value to convert
+   *
+   * @returns A document layout representing the stringified Float32 value
+   */
   @unsafe
   provide let float32 = (val: Float32) => {
     let num = GrainValue.getFloat32Value(val)
     let num = WasmF64.promoteF32(num)
-    Doc.string(NumberUtils.dtoa(num))
+    Doc.Builder.string(NumberUtils.dtoa(num))
   }
+  /**
+   * Converts a Uint32 value to its string representation.
+   *
+   * @param val: The Uint32 value to convert
+   *
+   * @returns A document layout representing the stringified Uint32 value
+   */
   @unsafe
   provide let uint32 = (val: Uint32) => {
     let num = GrainValue.getUint32Value(val)
-    Doc.string(NumberUtils.utoa32(num, defaultRadix))
+    Doc.Builder.string(NumberUtils.utoa32(num, defaultRadix))
   }
+  /**
+   * Converts a Uint64 value to its string representation.
+   *
+   * @param val: The Uint64 value to convert
+   *
+   * @returns A document layout representing the stringified Uint64 value
+   */
   @unsafe
   provide let uint64 = (val: Uint64) => {
     let num = GrainValue.getUint64Value(val)
-    Doc.string(NumberUtils.utoa64(num, defaultRadix))
+    Doc.Builder.string(NumberUtils.utoa64(num, defaultRadix))
   }
   // Short Values
+  /**
+   * Converts a Char value to its string representation.
+   *
+   * @param val: The Char value to convert
+   *
+   * @returns A document layout representing the stringified Char value
+   */
   @unsafe
   provide let char = (val: Char, state) => {
     use WasmI32.{ (+) }
@@ -259,25 +350,53 @@ module Stringify {
     let str = allocateString(strLength)
     writeEscapedUSV(usv, str + _STR_DATA_OFFSET, false, state.topLevel)
     ignore(val)
-    let content = Doc.string(WasmI32.toGrain(str): String)
+    let content = Doc.Builder.string(WasmI32.toGrain(str): String)
     if (state.topLevel) {
       content
     } else {
-      Doc.singleQuotes(content)
+      Doc.Builder.singleQuotes(content)
     }
   }
+  /**
+   * Converts an Int8 byte value to its string representation.
+   *
+   * @param val: The Int8 value to convert
+   *
+   * @returns A document layout representing the stringified Int8 value
+   */
   @unsafe
   provide let int8 = (val: Int8) =>
-    Doc.string(NumberUtils.itoa32(untagInt8(val), defaultRadix))
+    Doc.Builder.string(NumberUtils.itoa32(untagInt8(val), defaultRadix))
+  /**
+   * Converts an Int16 value to its string representation.
+   *
+   * @param val: The Int16 value to convert
+   *
+   * @returns A document layout representing the stringified Int16 value
+   */
   @unsafe
   provide let int16 = (val: Int16) =>
-    Doc.string(NumberUtils.itoa32(untagInt16(val), defaultRadix))
+    Doc.Builder.string(NumberUtils.itoa32(untagInt16(val), defaultRadix))
+  /**
+   * Converts a Uint8 byte value to its string representation.
+   *
+   * @param val: The Uint8 value to convert
+   *
+   * @returns A document layout representing the stringified Uint8 value
+   */
   @unsafe
   provide let uint8 = (val: Uint8) =>
-    Doc.string(NumberUtils.itoa32(untagUint8(val), defaultRadix))
+    Doc.Builder.string(NumberUtils.itoa32(untagUint8(val), defaultRadix))
+  /**
+   * Converts a Uint16 value to its string representation.
+   *
+   * @param val: The Uint16 value to convert
+   *
+   * @returns A document layout representing the stringified Uint16 value
+   */
   @unsafe
   provide let uint16 = (val: Uint16) =>
-    Doc.string(NumberUtils.itoa32(untagUint16(val), defaultRadix))
+    Doc.Builder.string(NumberUtils.itoa32(untagUint16(val), defaultRadix))
 
   // Polymorphic conversions
   let shortValueToString = (val: GrainValue.ShortValue<a>, state) => {
@@ -288,7 +407,7 @@ module Stringify {
       Int16Tag(v) => int16(v),
       Uint8Tag(v) => uint8(v),
       Uint16Tag(v) => uint16(v),
-      UnknownShortTag => Doc.string("<unknown short value>"),
+      UnknownShortTag => Doc.Builder.string("<unknown short value>"),
     }
   }
 
@@ -298,18 +417,18 @@ module Stringify {
     use WasmI32.{ (==) }
     let v = WasmI32.fromGrain(val)
     if (v == WasmI32.fromGrain(true)) {
-      Doc.string("true")
+      Doc.Builder.string("true")
     } else if (v == WasmI32.fromGrain(false)) {
-      Doc.string("false")
+      Doc.Builder.string("false")
     } else if (v == WasmI32.fromGrain(void)) {
-      Doc.string("void")
+      Doc.Builder.string("void")
     } else {
-      Doc.string("<unknown constant value>")
+      Doc.Builder.string("<unknown constant value>")
     }
   }
   @unsafe
   let rec heapValueToString = (val: GrainValue.HeapValue<a>, state) => {
-    use Doc.{ (++) }
+    use Doc.Builder.{ (++) }
     use WasmI32.{ (!=) }
     // Check for Cycles
     if (isCycleInStack(val, state.cycleStack)) {
@@ -326,9 +445,9 @@ module Stringify {
         },
         n => n,
       }
-      return Doc.string("<cycle to <")
-        ++ Doc.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
-        ++ Doc.string(">>")
+      return Doc.Builder.string("<cycle to <")
+        ++ Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
+        ++ Doc.Builder.string(">>")
     }
     // Get The Heap Tag
     let content = match (GrainValue.getHeapTag(val)) {
@@ -339,7 +458,7 @@ module Stringify {
       RecordTag(v) =>
         _record(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
       ADTTag(v) => adt(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
-      ClosureTag(_) => Doc.string("<lambda>"),
+      ClosureTag(_) => Doc.Builder.string("<lambda>"),
       StringTag(v) => string(v, state),
       BytesTag(v) => bytes(v),
       // Boxed Number Types
@@ -350,15 +469,15 @@ module Stringify {
       Uint32Tag(v) => uint32(v),
       Uint64Tag(v) => uint64(v),
       // Unknown
-      GrainValue.UnknownTag => Doc.string("<unknown heap value>"),
+      GrainValue.UnknownTag => Doc.Builder.string("<unknown heap value>"),
     }
     let cycleIndex = getCycleNumber(val, unbox(state.cycleMap))
     return if (cycleIndex != -1n) {
-      Doc.group(
-        Doc.angleBrackets(
-          Doc.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
+      Doc.Builder.group(
+        Doc.Builder.angleBrackets(
+          Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
         )
-          ++ Doc.blank(1)
+          ++ Doc.Builder.blank(1)
           ++ content
       )
     } else {
@@ -367,124 +486,167 @@ module Stringify {
   }
   and tupleHelp = (vals: List<GrainValue.StackTag<a>>, isVariant, state) => {
     let state = { ...state, topLevel: false }
-    use Doc.{ (++) }
-    let content = Doc.parens(
-      Doc.indent(
-        Doc.concatMap(
-          lead=next => Doc._break,
-          sep=(prev, next) => Doc.breakableSpace,
-          trail=prev => Doc.empty,
-          f=(final, val) => {
+    use Doc.Builder.{ (++) }
+    let content = Doc.Builder.parens(
+      Doc.Builder.indent(
+        Doc.Builder.concatMap(
+          lead=next => Doc.Builder._break,
+          sep=(prev, next) => Doc.Builder.breakableSpace,
+          trail=prev => Doc.Builder.empty,
+          func=(final, val) => {
             let val = taggedValue(val, state)
             if (final) {
-              Doc.group(val) ++ Doc.trailingComma
+              Doc.Builder.group(val) ++ Doc.Builder.trailingComma
             } else {
-              Doc.group(val ++ Doc.comma)
+              Doc.Builder.group(val ++ Doc.Builder.comma)
             }
           },
           vals
         )
       )
-        ++ Doc._break
+        ++ Doc.Builder._break
     )
     match (vals) {
-      [_] when !isVariant => Doc.string("box") ++ content,
+      [_] when !isVariant => Doc.Builder.string("box") ++ content,
       _ => content,
     }
   }
+  /**
+   * Converts a tuple value to its string representation.
+   *
+   * @param val: The tuple value to convert
+   * @param state: The current stringification state
+   *
+   * @returns A document layout representing the stringified tuple value
+   */
   and tuple = (val: GrainValue.TupleValue<e>, state) => {
     let vals = GrainValue.getTupleData(val)
     tupleHelp(vals, false, state)
   }
+  /**
+   * Converts an array value to its string representation.
+   *
+   * @param val: The array value to convert
+   * @param state: The current stringification state
+   *
+   * @returns A document layout representing the stringified array value
+   */
   and array = (val: Array<a>, state) => {
     let state = { ...state, topLevel: false }
-    use Doc.{ (++) }
+    use Doc.Builder.{ (++) }
     let vals = GrainValue.getArrayData(val)
-    Doc.arrayBrackets(
-      Doc.indent(
-        Doc.concatMap(
-          lead=next => Doc._break,
-          sep=(prev, next) => Doc.breakableSpace,
-          trail=prev => Doc.empty,
-          f=(final, val) => {
+    Doc.Builder.arrayBrackets(
+      Doc.Builder.indent(
+        Doc.Builder.concatMap(
+          lead=next => Doc.Builder._break,
+          sep=(prev, next) => Doc.Builder.breakableSpace,
+          trail=prev => Doc.Builder.empty,
+          func=(final, val) => {
             let val = taggedValue(val, state)
             if (final) {
-              Doc.group(val) ++ Doc.trailingComma
+              Doc.Builder.group(val) ++ Doc.Builder.trailingComma
             } else {
-              Doc.group(val ++ Doc.comma)
+              Doc.Builder.group(val ++ Doc.Builder.comma)
             }
           },
           vals
         )
       )
-        ++ Doc._break
+        ++ Doc.Builder._break
     )
   }
   and _recordHelp = (vals: List<(String, GrainValue.StackTag<a>)>, state) => {
-    use Doc.{ (++) }
-    Doc.braces(
-      Doc.indent(
-        Doc.concatMap(
-          lead=next => Doc.space ++ Doc._break,
-          sep=(prev, next) => Doc.breakableSpace,
-          trail=last => Doc.space,
-          f=(final, (name, val)) => {
+    use Doc.Builder.{ (++) }
+    Doc.Builder.braces(
+      Doc.Builder.indent(
+        Doc.Builder.concatMap(
+          lead=next => Doc.Builder.space ++ Doc.Builder._break,
+          sep=(prev, next) => Doc.Builder.breakableSpace,
+          trail=last => Doc.Builder.space,
+          func=(final, (name, val)) => {
             let val = taggedValue(val, { ...state, topLevel: false })
-            let entry = Doc.group(
-              Doc.string(name) ++ Doc.string(":") ++ Doc.space ++ val
+            let entry = Doc.Builder.group(
+              Doc.Builder.string(name)
+                ++ Doc.Builder.string(":")
+                ++ Doc.Builder.space
+                ++ val
             )
             if (final) {
               entry ++ match (vals) {
-                [_] => Doc.comma,
-                _ => Doc.trailingComma,
+                [_] => Doc.Builder.comma,
+                _ => Doc.Builder.trailingComma,
               }
             } else {
-              Doc.group(entry ++ Doc.comma)
+              Doc.Builder.group(entry ++ Doc.Builder.comma)
             }
           },
           vals
         )
       )
-        ++ Doc._break
+        ++ Doc.Builder._break
     )
   }
+  /**
+   * Converts a record value to its string representation.
+   *
+   * @param val: The record value to convert
+   * @param state: The current stringification state
+   *
+   * @returns A document layout representing the stringified record value
+   */
   and _record = (val: GrainValue.RecordValue<a>, state) => {
     _recordHelp(GrainValue.getRecordData(val), state)
   }
+  /**
+   * Converts a list value to its string representation.
+   *
+   * @param val: The list value to convert
+   * @param state: The current stringification state
+   *
+   * @returns A document layout representing the stringified list value
+   */
   and list = (val: List<a>, state) => {
-    use Doc.{ (++) }
-    Doc.listBrackets(
-      Doc.indent(
-        Doc.concatMap(
-          lead=next => Doc._break,
-          sep=(prev, next) => Doc.breakableSpace,
-          trail=prev => Doc.empty,
-          f=(final, val) => {
+    use Doc.Builder.{ (++) }
+    Doc.Builder.listBrackets(
+      Doc.Builder.indent(
+        Doc.Builder.concatMap(
+          lead=next => Doc.Builder._break,
+          sep=(prev, next) => Doc.Builder.breakableSpace,
+          trail=prev => Doc.Builder.empty,
+          func=(final, val) => {
             let value = value(val, { ...state, topLevel: false })
             if (final) {
-              Doc.group(value) ++ Doc.trailingComma
+              Doc.Builder.group(value) ++ Doc.Builder.trailingComma
             } else {
-              Doc.group(value ++ Doc.comma)
+              Doc.Builder.group(value ++ Doc.Builder.comma)
             }
           },
           val
         )
       )
-        ++ Doc._break
+        ++ Doc.Builder._break
     )
   }
+  /**
+   * Converts an ADT value to its string representation.
+   *
+   * @param val: The ADT value to convert
+   * @param state: The current stringification state
+   *
+   * @returns A document layout representing the stringified ADT value
+   */
   and adt = (val: GrainValue.ADTValue<a>, state) => {
-    use Doc.{ (++) }
+    use Doc.Builder.{ (++) }
     if (GrainValue.isListVariant(val)) {
       list(magic(val): List<b>, { ...state, topLevel: false })
     } else {
       let (name, variantData) = GrainValue.getVariantData(val)
-      Doc.string(name) ++ match (variantData) {
+      Doc.Builder.string(name) ++ match (variantData) {
         GrainValue.TupleVariant(vals) =>
           tupleHelp(vals, true, { ...state, topLevel: false }),
         GrainValue.RecordVariant(vals) =>
           _recordHelp(vals, { ...state, topLevel: false }),
-        EmptyVariant => Doc.empty,
+        EmptyVariant => Doc.Builder.empty,
       }
     }
   }
@@ -494,14 +656,29 @@ module Stringify {
       ShortTag(v) => shortValueToString(v, state),
       NumberTag(v) => number(v),
       ConstantTag(v) => constantValueToString(v),
-      UnknownTag => Doc.string("<unknown value>"),
+      UnknownTag => Doc.Builder.string("<unknown value>"),
     }
   }
-  and value = (val: a, state) => taggedValue(GrainValue.getTag(val), state)
+  /**
+   * Converts a Grain value to its string representation.
+   *
+   * @param value: The grain value to convert
+   * @param state: The current stringification state
+   *
+   * @returns A document layout representing the stringified value
+   */
+  and value = (value: a, state) => taggedValue(GrainValue.getTag(value), state)
 
-  provide { value }
+  provide { value, array, list, tuple, _record, adt }
 }
 
+/**
+ * Converts any Grain value to its string representation.
+ *
+ * @param val: The Grain value to convert
+ *
+ * @returns The string representation of the Grain value
+ */
 provide let toString = (val: a) => {
   // Note: This is a bit of hack to get around grain's lack of forall types
   let val = magic(val): b

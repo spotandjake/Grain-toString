@@ -1,0 +1,12 @@
+module Perf
+
+from "../toString.gr" include ToString
+
+from "array" include Array
+from "list" include List
+
+let largeArray = Array.init(1_000_000, i => i * i)
+let largeList = List.init(1_000_000, i => i * i)
+
+ignore(ToString.toString(largeArray))
+ignore(ToString.toString(largeList))
