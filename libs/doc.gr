@@ -667,30 +667,23 @@ provide module Engine {
                 writeQueue = Some(buildSpaceString(group.globalIndent))
                 column = group.globalIndent
               }
+              let fit = nextWidth => {
+                let nextWidth = widthValue(nextWidth)
+                let hintWidth = widthValue(width)
+                if (column + hintWidth + nextWidth > lineWidth) {
+                  _break()
+                } else {
+                  queue = [Print(group, doc), ...queue]
+                }
+              }
               match (group.mode) {
                 Flat => queue = [Print(group, doc), ...queue],
                 Breaking => _break(),
                 FitFlat => {
-                  k = Some(nextDoc => {
-                    let nextWidth = widthValue(flatWidth(nextDoc))
-                    let hintWidth = widthValue(width)
-                    if (column + hintWidth + nextWidth > lineWidth) {
-                      _break()
-                    } else {
-                      queue = [Print(group, doc), ...queue]
-                    }
-                  })
+                  k = Some(nextDoc => fit(flatWidth(nextDoc)))
                 },
                 FitBreaking => {
-                  k = Some(nextDoc => {
-                    let nextWidth = widthValue(breakingWidth(nextDoc))
-                    let hintWidth = widthValue(width)
-                    if (column + hintWidth + nextWidth > lineWidth) {
-                      _break()
-                    } else {
-                      queue = [Print(group, doc), ...queue]
-                    }
-                  })
+                  k = Some(nextDoc => fit(breakingWidth(nextDoc)))
                 },
               }
             },
