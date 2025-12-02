@@ -216,6 +216,27 @@ Returns:
 | ------------ | ----------------------------------- |
 | `LayoutNode` | A LayoutNode that prints the string |
 
+#### Doc.Builder.**constantString**
+
+```grain
+constantString: (str: String, width: Number) => LayoutNode
+```
+
+A node that prints a constant string as-is.
+
+Parameters:
+
+| param   | type     | description               |
+| ------- | -------- | ------------------------- |
+| `str`   | `String` | The ascii string to print |
+| `width` | `Number` | The width of the string   |
+
+Returns:
+
+| type         | description                               |
+| ------------ | ----------------------------------------- |
+| `LayoutNode` | A LayoutNode that prints the ascii string |
+
 #### Doc.Builder.**blank**
 
 ```grain

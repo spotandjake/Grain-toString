@@ -290,20 +290,13 @@ let hasGroupBreaker = doc => {
     Concat{ hasGroupBreaker, _ } | Indent{ hasGroupBreaker, _ } =>
       hasGroupBreaker,
     GroupBreaker => true,
-    Empty |
-    IfBroken{ _ } |
-    BreakHint{ _ } |
-    Blank{ _ } |
-    Hardline{ _ } |
-    Group{ _ } |
-    String{ _ } => false,
+    _ => false,
   }
 }
 
 let widthValue = width => {
-  match (width) {
-    WithBreak(w) | WithoutBreak(w) => w,
-  }
+  let WithBreak(w) | WithoutBreak(w) = width
+  w
 }
 
 /**
@@ -328,6 +321,17 @@ provide module Builder {
    */
   provide let string = str =>
     String{ value: str, width: WithoutBreak(stringLength(str)) }
+  /**
+   * A node that prints a constant string as-is.
+   *
+   * @param str: The ascii string to print
+   * @param width: The width of the string
+   *
+   * @returns A LayoutNode that prints the ascii string
+   */
+  provide let constantString = (str, width) =>
+    String{ value: str, width: WithoutBreak(width) }
+
   /**
    * A node that prints the specified number of spaces.
    *
@@ -498,7 +502,7 @@ provide module Builder {
   /** A node that represents a space. */
   provide let space = blank(1)
   /** A node that represents a comma. */
-  provide let comma = string(",")
+  provide let comma = constantString(",", 1)
   /** A node that represents a comma followed by a breakable space. */
   provide let commaBreakableSpace = comma ++ breakableSpace
   /**
@@ -510,7 +514,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in parentheses
    */
   provide let parens = (wrap=doc => group(doc), doc) =>
-    wrap(string("(") ++ doc ++ string(")"))
+    wrap(constantString("(", 1) ++ doc ++ constantString(")", 1))
   /**
    * Constructs a node wrapping the given document in braces.
    *
@@ -520,7 +524,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in braces
    */
   provide let braces = (wrap=doc => group(doc), doc) =>
-    wrap(string("{") ++ doc ++ string("}"))
+    wrap(constantString("{", 1) ++ doc ++ constantString("}", 1))
   /**
    * Constructs a node wrapping the given document in array brackets.
    *
@@ -530,7 +534,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in array brackets
    */
   provide let arrayBrackets = (wrap=doc => group(doc), doc) =>
-    wrap(string("[>") ++ doc ++ string("]"))
+    wrap(constantString("[>", 2) ++ doc ++ constantString("]", 1))
   /**
    * Constructs a node wrapping the given document in list brackets.
    *
@@ -540,7 +544,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in list brackets
    */
   provide let listBrackets = (wrap=doc => group(doc), doc) =>
-    wrap(string("[") ++ doc ++ string("]"))
+    wrap(constantString("[", 1) ++ doc ++ constantString("]", 1))
   /**
    * Constructs a node wrapping the given document in angle brackets.
    *
@@ -550,7 +554,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in angle brackets
    */
   provide let angleBrackets = (wrap=doc => group(doc), doc) =>
-    wrap(string("<") ++ doc ++ string(">"))
+    wrap(constantString("<", 1) ++ doc ++ constantString(">", 1))
   /**
    * Constructs a node wrapping the given document in double quotes.
    *
@@ -558,7 +562,8 @@ provide module Builder {
    *
    * @returns A LayoutNode that wraps the document in double quotes
    */
-  provide let doubleQuotes = doc => string("\"") ++ doc ++ string("\"")
+  provide let doubleQuotes = doc =>
+    constantString("\"", 1) ++ doc ++ constantString("\"", 1)
   /**
    * Constructs a node wrapping the given document in single quotes.
    *
@@ -566,7 +571,8 @@ provide module Builder {
    *
    * @returns A LayoutNode that wraps the document in single quotes
    */
-  provide let singleQuotes = doc => string("'") ++ doc ++ string("'")
+  provide let singleQuotes = doc =>
+    constantString("'", 1) ++ doc ++ constantString("'", 1)
   /**
    * A node that represents a trailing comma to be added if the
    * current group is broken.
@@ -597,6 +603,8 @@ provide module Engine {
     UpdateIndent(EngineGroup, Number, Number),
   }
 
+  let none = None
+
   /**
    * Prints the given document using the provided write function.
    *
@@ -611,36 +619,53 @@ provide module Engine {
     // The current column we're writing to
     let mut column = 0
     // Queue for indentation to prevent lines with just spaces
-    let mut writeQueue = None
+    let mut writeQueue = none
     // Continuation for Fit mode calculations that depend on the size of the next node
-    let mut k = None
+    let mut k = none
+    // The queue of printing instructions
+    let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
+    let mut queue = [Print(group, doc)]
 
     let eol = match (eol) {
       CRLF => "\r\n",
       LF => "\n",
     }
 
+    // Helpers
     let flushWriteQueue = () => {
       match (writeQueue) {
         Some(queued) => {
           write(queued)
-          writeQueue = None
+          writeQueue = none
         },
         None => void,
       }
     }
-
-    let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
-    let mut queue = [Print(group, doc)]
+    let breakHelp = (write, eol, group) => {
+      group.broken = true
+      group.globalIndent = group.globalIndent + group.localIndent
+      group.localIndent = 0
+      write(eol)
+      writeQueue = Some(buildSpaceString(group.globalIndent))
+      column = group.globalIndent
+    }
+    let fit = (write, eol, group, nextWidth, width) => {
+      let nextWidth = widthValue(nextWidth)
+      let hintWidth = widthValue(width)
+      if (column + hintWidth + nextWidth > lineWidth) {
+        breakHelp(write, eol, group)
+      } else {
+        queue = [Print(group, doc), ...queue]
+      }
+    }
 
     while (true) {
       match (queue) {
-        [] => break,
         [Print(group, doc), ...rest] => {
           queue = rest
           match (k) {
             Some(f) => {
-              k = None
+              k = none
               f(doc)
             },
             None => void,
@@ -659,42 +684,23 @@ provide module Engine {
               column += count
             },
             BreakHint{ doc, flatWidth: width } => {
-              let _break = () => {
-                group.broken = true
-                group.globalIndent = group.globalIndent + group.localIndent
-                group.localIndent = 0
-                write(eol)
-                writeQueue = Some(buildSpaceString(group.globalIndent))
-                column = group.globalIndent
-              }
-              let fit = nextWidth => {
-                let nextWidth = widthValue(nextWidth)
-                let hintWidth = widthValue(width)
-                if (column + hintWidth + nextWidth > lineWidth) {
-                  _break()
-                } else {
-                  queue = [Print(group, doc), ...queue]
-                }
-              }
               match (group.mode) {
                 Flat => queue = [Print(group, doc), ...queue],
-                Breaking => _break(),
+                Breaking => breakHelp(write, eol, group),
                 FitFlat => {
-                  k = Some(nextDoc => fit(flatWidth(nextDoc)))
+                  k = Some(
+                    nextDoc => fit(write, eol, group, flatWidth(nextDoc), width),
+                  )
                 },
                 FitBreaking => {
-                  k = Some(nextDoc => fit(breakingWidth(nextDoc)))
+                  k = Some(
+                    nextDoc =>
+                      fit(write, eol, group, breakingWidth(nextDoc), width),
+                  )
                 },
               }
             },
-            Hardline{ _ } => {
-              group.broken = true
-              group.globalIndent = group.globalIndent + group.localIndent
-              group.localIndent = 0
-              write(eol)
-              writeQueue = Some(buildSpaceString(group.globalIndent))
-              column = group.globalIndent
-            },
+            Hardline{ _ } => breakHelp(write, eol, group),
             IfBroken{ flat, breaking, _ } => {
               queue = [
                 Print(group, if (group.broken) breaking else flat),
@@ -713,8 +719,9 @@ provide module Engine {
             },
             Group{ doc, groupType, flatWidth, _ } => {
               let width = widthValue(flatWidth)
+              let broken = hasGroupBreaker(doc)
               let mode = match (groupType) {
-                _ when hasGroupBreaker(doc) => Breaking,
+                _ when broken => Breaking,
                 Auto when column + width > lineWidth => Breaking,
                 Auto => Flat,
                 FitGroups => FitFlat,
@@ -725,7 +732,7 @@ provide module Engine {
                 mode,
                 globalIndent: group.globalIndent,
                 localIndent: 0,
-                broken: hasGroupBreaker(doc),
+                broken,
               }
               queue = [Print(group, doc), ...queue]
             },
@@ -739,6 +746,7 @@ provide module Engine {
           group.globalIndent = globalIndent
           group.localIndent = localIndent
         },
+        [] => break,
       }
     }
   }

@@ -235,8 +235,10 @@ module Stringify {
     let content = if (len < 32n)
       content
     else
-      content ++ Doc.Builder.string("...")
-    Doc.Builder.angleBrackets(Doc.Builder.string("bytes: ") ++ content)
+      content ++ Doc.Builder.constantString("...", 3)
+    Doc.Builder.angleBrackets(
+      Doc.Builder.constantString("bytes: ", 7) ++ content
+    )
   }
   /**
    * Converts a Number value to its string representation.
@@ -273,7 +275,7 @@ module Stringify {
         )
         ignore(v)
         Doc.Builder.string(numerator)
-          ++ Doc.Builder.string("/")
+          ++ Doc.Builder.constantString("/", 1)
           ++ Doc.Builder.string(denominator)
       },
       GrainValue.BigIntTag(v) => {
@@ -282,7 +284,8 @@ module Stringify {
         ignore(v)
         Doc.Builder.string(str)
       },
-      GrainValue.UnknownNumberTag => Doc.Builder.string("<unknown number>"),
+      GrainValue.UnknownNumberTag =>
+        Doc.Builder.constantString("<unknown number>", 16),
     }
   }
   /**
@@ -407,7 +410,8 @@ module Stringify {
       Int16Tag(v) => int16(v),
       Uint8Tag(v) => uint8(v),
       Uint16Tag(v) => uint16(v),
-      UnknownShortTag => Doc.Builder.string("<unknown short value>"),
+      UnknownShortTag =>
+        Doc.Builder.constantString("<unknown short value>", 21),
     }
   }
 
@@ -417,13 +421,13 @@ module Stringify {
     use WasmI32.{ (==) }
     let v = WasmI32.fromGrain(val)
     if (v == WasmI32.fromGrain(true)) {
-      Doc.Builder.string("true")
+      Doc.Builder.constantString("true", 4)
     } else if (v == WasmI32.fromGrain(false)) {
-      Doc.Builder.string("false")
+      Doc.Builder.constantString("false", 5)
     } else if (v == WasmI32.fromGrain(void)) {
-      Doc.Builder.string("void")
+      Doc.Builder.constantString("void", 4)
     } else {
-      Doc.Builder.string("<unknown constant value>")
+      Doc.Builder.constantString("<unknown constant value>", 24)
     }
   }
   @unsafe
@@ -445,9 +449,9 @@ module Stringify {
         },
         n => n,
       }
-      return Doc.Builder.string("<cycle to <")
+      return Doc.Builder.constantString("<cycle to <", 11)
         ++ Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
-        ++ Doc.Builder.string(">>")
+        ++ Doc.Builder.constantString(">>", 2)
     }
     // Get The Heap Tag
     let content = match (GrainValue.getHeapTag(val)) {
@@ -458,7 +462,7 @@ module Stringify {
       RecordTag(v) =>
         _record(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
       ADTTag(v) => adt(v, { ...state, cycleStack: [val, ...state.cycleStack] }),
-      ClosureTag(_) => Doc.Builder.string("<lambda>"),
+      ClosureTag(_) => Doc.Builder.constantString("<lambda>", 8),
       StringTag(v) => string(v, state),
       BytesTag(v) => bytes(v),
       // Boxed Number Types
@@ -469,7 +473,8 @@ module Stringify {
       Uint32Tag(v) => uint32(v),
       Uint64Tag(v) => uint64(v),
       // Unknown
-      GrainValue.UnknownTag => Doc.Builder.string("<unknown heap value>"),
+      GrainValue.UnknownTag =>
+        Doc.Builder.constantString("<unknown heap value>", 20),
     }
     let cycleIndex = getCycleNumber(val, unbox(state.cycleMap))
     return if (cycleIndex != -1n) {
@@ -507,7 +512,7 @@ module Stringify {
         ++ Doc.Builder._break
     )
     match (vals) {
-      [_] when !isVariant => Doc.Builder.string("box") ++ content,
+      [_] when !isVariant => Doc.Builder.constantString("box", 3) ++ content,
       _ => content,
     }
   }
@@ -567,7 +572,7 @@ module Stringify {
             let val = taggedValue(val, { ...state, topLevel: false })
             let entry = Doc.Builder.group(
               Doc.Builder.string(name)
-                ++ Doc.Builder.string(":")
+                ++ Doc.Builder.constantString(":", 1)
                 ++ Doc.Builder.space
                 ++ val
             )
@@ -656,7 +661,7 @@ module Stringify {
       ShortTag(v) => shortValueToString(v, state),
       NumberTag(v) => number(v),
       ConstantTag(v) => constantValueToString(v),
-      UnknownTag => Doc.Builder.string("<unknown value>"),
+      UnknownTag => Doc.Builder.constantString("<unknown value>", 15),
     }
   }
   /**
