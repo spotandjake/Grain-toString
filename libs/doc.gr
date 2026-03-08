@@ -107,12 +107,17 @@
 @noPervasives
 module Doc
 
+from "runtime/unsafe/wasmRef" include WasmRef
+use WasmRef.{ module WasmArrayRef }
 from "runtime/unsafe/wasmI32" include WasmI32
-from "runtime/unsafe/memory" include Memory
-from "runtime/unsafe/offsets" include Offsets
-use Offsets.{ _STR_LEN_OFFSET, _STR_DATA_OFFSET }
 from "runtime/dataStructures" include DataStructures
-use DataStructures.{ allocateString, tagSimpleNumber, untagSimpleNumber }
+use DataStructures.{
+  allocateString,
+  getStringSize,
+  getStringArrayRef,
+  tagSimpleNumber,
+  untagSimpleNumber,
+}
 from "runtime/utf8" include Utf8
 use Utf8.{ isLeadingByte }
 
@@ -122,7 +127,6 @@ from "./miniBuffer.gr" include MiniBuffer
 
 primitive (||) = "@or"
 primitive throw = "@throw"
-primitive ignore = "@ignore"
 
 exception Impossible(String)
 
@@ -140,30 +144,27 @@ let (>) = (a: Number, b: Number) => {
 
 @unsafe
 let stringLength = (string: String) => {
-  use WasmI32.{ (+), (&), (!=), ltU as (<) }
-  let mut stringPtr = WasmI32.fromGrain(string)
-  let size = WasmI32.load(stringPtr, _STR_LEN_OFFSET)
+  use WasmI32.{ (+), ltU as (<) }
+  let strRef = WasmRef.fromGrain(string)
+  let strData = getStringArrayRef(strRef)
+  let strSize = getStringSize(strRef)
 
   let mut len = 0n
-  stringPtr += _STR_DATA_OFFSET
-  let end = stringPtr + size
-
-  while (stringPtr < end) {
-    let byte = WasmI32.load8U(stringPtr, 0n)
+  for (let mut i = 0n; i < strSize; i += 1n) {
+    let byte = WasmArrayRef.getI8U(strData, i)
     if (isLeadingByte(byte)) len += 1n
-    stringPtr += 1n
   }
-  ignore(string)
   tagSimpleNumber(len)
 }
+
 @unsafe
 let buildSpaceString = count => {
-  use WasmI32.{ (*), (+) }
   let size = untagSimpleNumber(count)
-  let ptr = allocateString(size)
+  let strRef = allocateString(size)
+  let strData = getStringArrayRef(strRef)
   // 32n is ASCII code for space
-  Memory.fill(ptr + _STR_DATA_OFFSET, 32n, size)
-  WasmI32.toGrain(ptr): String
+  WasmArrayRef.fillI8(strData, 0n, 32n, size)
+  WasmRef.toGrain(strRef): String
 }
 
 /**
@@ -643,7 +644,7 @@ provide module Engine {
     }
     let breakHelp = (write, eol, group) => {
       group.broken = true
-      group.globalIndent = group.globalIndent + group.localIndent
+      group.globalIndent += group.localIndent
       group.localIndent = 0
       write(eol)
       writeQueue = Some(buildSpaceString(group.globalIndent))

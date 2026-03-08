@@ -216,8 +216,8 @@ Unknown short tag
 ```grain
 enum VariantType<a> {
   EmptyVariant,
-  TupleVariant(List<StackTag<a>>),
-  RecordVariant(List<(String, StackTag<a>)>),
+  TupleVariant(Array<StackTag<a>>),
+  RecordVariant(Array<(String, StackTag<a>)>),
 }
 ```
 
@@ -234,13 +234,13 @@ EmptyVariant
 A variant with no attached data.
 
 ```grain
-TupleVariant(List<StackTag<a>>)
+TupleVariant(Array<StackTag<a>>)
 ```
 
 A variant with tuple data attached.
 
 ```grain
-RecordVariant(List<(String, StackTag<a>)>)
+RecordVariant(Array<(String, StackTag<a>)>)
 ```
 
 A variant with record data attached.
@@ -344,7 +344,7 @@ Returns:
 ### GrainValue.**getTupleData**
 
 ```grain
-getTupleData: (value: TupleValue<a>) => List<StackTag<b>>
+getTupleData: (value: TupleValue<a>) => Array<StackTag<a>>
 ```
 
 Provides the tuples tagged contents.
@@ -357,14 +357,14 @@ Parameters:
 
 Returns:
 
-| type                | description                                             |
-| ------------------- | ------------------------------------------------------- |
-| `List<StackTag<b>>` | A list of tagged values representing the tuple's fields |
+| type                 | description                                               |
+| -------------------- | --------------------------------------------------------- |
+| `Array<StackTag<a>>` | An array of tagged values representing the tuple contents |
 
 ### GrainValue.**getArrayData**
 
 ```grain
-getArrayData: (value: Array<a>) => List<StackTag<b>>
+getArrayData: (value: Array<a>) => Array<StackTag<a>>
 ```
 
 Provides the array's tagged contents.
@@ -377,14 +377,14 @@ Parameters:
 
 Returns:
 
-| type                | description                                               |
-| ------------------- | --------------------------------------------------------- |
-| `List<StackTag<b>>` | A list of tagged values representing the array's elements |
+| type                 | description                                                 |
+| -------------------- | ----------------------------------------------------------- |
+| `Array<StackTag<a>>` | An array of tagged values representing the array's elements |
 
 ### GrainValue.**getRecordData**
 
 ```grain
-getRecordData: (record_: RecordValue<a>) => List<(String, StackTag<b>)>
+getRecordData: (record_: RecordValue<a>) => Array<(String, StackTag<b>)>
 ```
 
 Provides the record's tagged field data.
@@ -397,9 +397,9 @@ Parameters:
 
 Returns:
 
-| type                          | description                                               |
-| ----------------------------- | --------------------------------------------------------- |
-| `List<(String, StackTag<b>)>` | An associated list of field names and their tagged values |
+| type                           | description                                                              |
+| ------------------------------ | ------------------------------------------------------------------------ |
+| `Array<(String, StackTag<b>)>` | An associated array of field names and their corresponding tagged values |
 
 ### GrainValue.**getVariantData**
 

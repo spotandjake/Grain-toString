@@ -1,24 +1,20 @@
 @noPervasives
 module MiniBuffer
 
+from "runtime/unsafe/wasmRef" include WasmRef
+use WasmRef.{ module WasmArrayRef }
 from "runtime/unsafe/wasmi32" include WasmI32
-from "runtime/unsafe/offsets" include Offsets
-use Offsets.{
-  _STR_LEN_OFFSET,
-  _STR_DATA_OFFSET,
-  _BYTES_LEN_OFFSET,
-  _BYTES_DATA_OFFSET,
-}
-from "runtime/unsafe/memory" include Memory
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
   allocateBytes,
+  getBytesSize,
+  getBytesArrayRef,
   allocateString,
+  getStringSize,
+  getStringArrayRef,
   tagSimpleNumber,
   untagSimpleNumber,
 }
-
-primitive ignore = "@ignore"
 
 abstract record MiniBuffer {
   mut data: Bytes,
@@ -27,55 +23,48 @@ abstract record MiniBuffer {
 @unsafe
 provide let make = size =>
   {
-    data: WasmI32.toGrain(allocateBytes(untagSimpleNumber(size))): Bytes,
+    data: WasmRef.toGrain(allocateBytes(untagSimpleNumber(size))): Bytes,
     pos: 0,
   }
 
 @unsafe
 let autogrow = (buffer: MiniBuffer, addedSize: WasmI32) => {
   use WasmI32.{ (+), (*), (>=), (<) }
-  let bufferPointer = WasmI32.fromGrain(buffer.data)
-  let mut bufferSize = WasmI32.load(bufferPointer, _BYTES_LEN_OFFSET)
+  let bufferRef = WasmRef.fromGrain(buffer.data)
+  let bufferData = getBytesArrayRef(bufferRef)
+  let mut bufferSize = getBytesSize(bufferRef)
   let bufferPosition = untagSimpleNumber(buffer.pos)
   let desiredSize = bufferPosition + addedSize
   if (bufferSize >= desiredSize) return
   while (bufferSize < desiredSize) bufferSize *= 2n
-  let newBufferPointer = allocateBytes(bufferSize)
-  Memory.copy(
-    newBufferPointer + _BYTES_DATA_OFFSET,
-    bufferPointer + _BYTES_DATA_OFFSET,
-    bufferSize
-  )
-  buffer.data = WasmI32.toGrain(newBufferPointer): Bytes
-  ignore(buffer.data)
+  let newBufferRef = allocateBytes(bufferSize)
+  let newBufferData = getBytesArrayRef(newBufferRef)
+  WasmArrayRef.copyI8(newBufferData, 0n, bufferData, 0n, bufferPosition)
+  buffer.data = WasmRef.toGrain(newBufferRef): Bytes
   return
 }
 
 @unsafe
 provide let addString = (str: String, buffer: MiniBuffer) => {
-  use WasmI32.{ (*), (+), (<), (==) }
-  let stringPointer = WasmI32.fromGrain(str)
-  let stringSize = WasmI32.load(stringPointer, _STR_LEN_OFFSET)
-  autogrow(buffer, stringSize)
-  let bufferPointer = WasmI32.fromGrain(buffer.data)
+  use WasmI32.{ (+) }
+  let strRef = WasmRef.fromGrain(str)
+  let strData = getStringArrayRef(strRef)
+  let strSize = getStringSize(strRef)
+  autogrow(buffer, strSize)
+  let bufferRef = WasmRef.fromGrain(buffer.data)
+  let bufferData = getBytesArrayRef(bufferRef)
   let bufferPosition = untagSimpleNumber(buffer.pos)
   // Write String
-  Memory.copy(
-    bufferPointer + _BYTES_DATA_OFFSET + bufferPosition,
-    stringPointer + _STR_DATA_OFFSET,
-    stringSize
-  )
-  buffer.pos = tagSimpleNumber(bufferPosition + stringSize)
-  ignore(str)
-  ignore(buffer.data)
+  WasmArrayRef.copyI8(bufferData, bufferPosition, strData, 0n, strSize)
+  buffer.pos = tagSimpleNumber(bufferPosition + strSize)
 }
 @unsafe
 provide let toString = (buffer: MiniBuffer) => {
-  use WasmI32.{ (+) }
-  let src = WasmI32.fromGrain(buffer.data)
+  let srcRef = WasmRef.fromGrain(buffer.data)
+  let srcData = getBytesArrayRef(srcRef)
   let size = untagSimpleNumber(buffer.pos)
-  let dst = allocateString(size)
-  Memory.copy(dst + _BYTES_DATA_OFFSET, src + _BYTES_DATA_OFFSET, size)
-  ignore(buffer.data)
-  WasmI32.toGrain(dst): String
+  let dstRef = allocateString(size)
+  let dstData = getStringArrayRef(dstRef)
+  WasmArrayRef.copyI8(dstData, 0n, srcData, 0n, size)
+  WasmRef.toGrain(dstRef): String
 }

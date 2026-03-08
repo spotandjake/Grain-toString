@@ -18,16 +18,11 @@
 @noPervasives
 module ToString
 
+from "runtime/unsafe/wasmref" include WasmRef
+use WasmRef.{ module WasmArrayRef }
 from "runtime/unsafe/wasmi32" include WasmI32
 from "runtime/unsafe/wasmf64" include WasmF64
 from "runtime/unsafe/memory" include Memory
-from "runtime/unsafe/offsets" include Offsets
-use Offsets.{
-  _BYTES_LEN_OFFSET,
-  _BYTES_DATA_OFFSET,
-  _STR_LEN_OFFSET,
-  _STR_DATA_OFFSET,
-}
 from "runtime/bigint" include Bigint
 from "runtime/numberUtils" include NumberUtils
 from "runtime/dataStructures" include DataStructures
@@ -53,13 +48,25 @@ let _RATIONAL_NUMERATOR_OFFSET = 8n
 @unsafe
 let _RATIONAL_DENOMINATOR_OFFSET = 12n
 
-primitive ignore = "@ignore"
 primitive (!) = "@not"
 primitive (&&) = "@and"
 primitive (is) = "@is"
 primitive magic = "@magic"
 primitive box = "@box"
 primitive unbox = "@unbox"
+
+@unsafe
+let arrayToList = (arr: Array<a>) => {
+  use WasmI32.{ (+), (-), (>=) }
+  let arrRef = WasmRef.fromGrain(arr)
+  let arrData = DataStructures.getCompoundValueArrayRef(arrRef)
+  let arity = WasmArrayRef.length(arrData)
+  let mut list = []
+  for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
+    list = [WasmRef.toGrain(WasmArrayRef.getAny(arrData, i)): a, ...list]
+  }
+  list
+}
 
 // Computes the escaped length of a usv
 @unsafe
@@ -76,17 +83,18 @@ let computeEscapedUSVLength = (usv: WasmI32, isString: Bool, topLevel: Bool) => 
 @unsafe
 let writeEscapedUSV = (
   usv: WasmI32,
-  ptr: WasmI32,
+  strData: WasmArrayRef.WasmArrayRef,
+  index: WasmI32,
   isString: Bool,
   topLevel: Bool,
 ) => {
   use WasmI32.{ (+), (==) }
-  let mut ptr = ptr
+  let mut index = index
   if (!topLevel) {
     if (computeEscapedUSVLength(usv, isString, topLevel) == 2n) {
-      ptr += writeUtf8CodePoint(ptr, 0x5Cn) // \
+      index += writeUtf8CodePoint(strData, index, 0x5Cn) // \
     }
-    ptr += writeUtf8CodePoint(ptr, match (usv) {
+    index += writeUtf8CodePoint(strData, index, match (usv) {
       0x08n => 0x62n, // \b,
       0x0Cn => 0x66n, // \f
       0x0An => 0x6En, // \n
@@ -99,9 +107,9 @@ let writeEscapedUSV = (
       _ => usv,
     })
   } else {
-    ptr += writeUtf8CodePoint(ptr, usv)
+    index += writeUtf8CodePoint(strData, index, usv)
   }
-  ptr
+  index
 }
 
 // Determines if a heap value is in the current cycle stack
@@ -171,34 +179,34 @@ module Stringify {
    */
   @unsafe
   provide let string = (val: String, state) => {
-    use WasmI32.{ (+), (-), (>) }
-    let strPointer = WasmI32.fromGrain(val)
-    let strLength = WasmI32.load(strPointer, _STR_LEN_OFFSET)
+    use WasmI32.{ (+), (-), (<) }
+    let strRef = WasmRef.fromGrain(val)
+    let strSize = DataStructures.getStringSize(strRef)
+    let strData = DataStructures.getStringArrayRef(strRef)
     // Compute String Length with Escaping
     let mut escapedLength = 0n
-    let mut currentPtr = strPointer + _STR_DATA_OFFSET
-    let mut remainingByteLength = strLength
-    while (remainingByteLength > 0n) {
-      let usv = Utf8.getCodePoint(currentPtr)
+    for (let mut i = 0n; i < strSize;) {
+      let usv = Utf8.getCodePoint(strData, i)
       let usvSize = Utf8.usvEncodeLength(usv)
-      remainingByteLength -= usvSize
-      currentPtr += usvSize
+      i += usvSize
       escapedLength += computeEscapedUSVLength(usv, true, state.topLevel)
     }
     // Write String with Escaping
-    let escapedStr = allocateString(escapedLength)
-    let mut currentPtr = strPointer + _STR_DATA_OFFSET
-    let mut escapedPtr = escapedStr + _STR_DATA_OFFSET
-    let mut remainingByteLength = strLength
-    while (remainingByteLength > 0n) {
-      let usv = Utf8.getCodePoint(currentPtr)
-      let usvSize = Utf8.usvEncodeLength(usv)
-      remainingByteLength -= usvSize
-      currentPtr += usvSize
-      escapedPtr = writeEscapedUSV(usv, escapedPtr, true, state.topLevel)
+    let escapedStrRef = allocateString(escapedLength)
+    let escapedStrData = DataStructures.getStringArrayRef(escapedStrRef)
+    let mut escapedIndex = 0n
+    for (let mut i = 0n; i < strSize;) {
+      let usv = Utf8.getCodePoint(strData, i)
+      i += Utf8.usvEncodeLength(usv)
+      escapedIndex = writeEscapedUSV(
+        usv,
+        escapedStrData,
+        escapedIndex,
+        true,
+        state.topLevel
+      )
     }
-    let content = Doc.Builder.string(WasmI32.toGrain(escapedStr): String)
-    ignore(val)
+    let content = Doc.Builder.string(WasmRef.toGrain(escapedStrRef): String)
     if (state.topLevel) {
       content
     } else {
@@ -216,23 +224,26 @@ module Stringify {
   provide let bytes = (val: Bytes) => {
     use Doc.Builder.{ (++) }
     use WasmI32.{ (+), (-), (*), (<), (>) }
-    let mut ptr = WasmI32.fromGrain(val)
-    let len = WasmI32.load(ptr, _BYTES_LEN_OFFSET)
-    let len = if (len > 32n) 32n else len // Limit to 32 bytes for display
-    let ptr = ptr + _BYTES_DATA_OFFSET
+    let ref = WasmRef.fromGrain(val)
+    let data = DataStructures.getBytesArrayRef(ref)
+    let size = DataStructures.getBytesSize(ref)
+    let size = if (size > 32n) 32n else size // Limit to 32 bytes for display
 
     let hex = NumberUtils.get_HEX_DIGITS()
-    let strLen = len * 3n - 1n // 2 hex digits + 1 space per byte - trailing space
-    let str = allocateString(strLen)
-    let strOffset = str + _STR_DATA_OFFSET
-    Memory.fill(strOffset, 0x20n, strLen) // Fill with spaces
-    for (let mut i = 0n; i < len; i += 1n) {
-      let n = WasmI32.load8U(ptr, i) * 2n
-      WasmI32.store16(strOffset, WasmI32.load16U(hex, n), i * 3n)
+    let strLen = size * 3n - 1n // 2 hex digits + 1 space per byte - trailing space
+    let strRef = allocateString(strLen)
+    let strData = DataStructures.getStringArrayRef(strRef)
+    WasmArrayRef.fillI8(strData, 0n, 0x20n, strLen) // Fill with spaces
+    for (let mut i = 0n; i < size; i += 1n) {
+      use WasmI32.{ (>>>) }
+      let j = i * 3n
+      let n = WasmArrayRef.getI8U(data, i) * 2n
+      let hex = WasmI32.load16U(hex, n)
+      WasmArrayRef.setI8(strData, j, hex)
+      WasmArrayRef.setI8(strData, j + 1n, hex >>> 8n)
     }
-    ignore(val)
-    let content = Doc.Builder.string(WasmI32.toGrain(str): String)
-    let content = if (len < 32n)
+    let content = Doc.Builder.string(WasmRef.toGrain(strRef): String)
+    let content = if (size < 32n)
       content
     else
       content ++ Doc.Builder.constantString("...", 3)
@@ -264,24 +275,18 @@ module Stringify {
       },
       GrainValue.RationalTag(v) => {
         use Doc.Builder.{ (++) }
-        let ptr = WasmI32.fromGrain(v)
-        let numerator = Bigint.bigIntToString(
-          WasmI32.load(ptr, _RATIONAL_NUMERATOR_OFFSET),
-          defaultRadix
-        )
-        let denominator = Bigint.bigIntToString(
-          WasmI32.load(ptr, _RATIONAL_DENOMINATOR_OFFSET),
-          defaultRadix
-        )
-        ignore(v)
+        let ref = WasmRef.fromGrain(v)
+        let numerator = DataStructures.getRationalNumerator(ref)
+        let numerator = Bigint.bigIntToString(numerator, defaultRadix)
+        let denominator = DataStructures.getRationalDenominator(ref)
+        let denominator = Bigint.bigIntToString(denominator, defaultRadix)
         Doc.Builder.string(numerator)
           ++ Doc.Builder.constantString("/", 1)
           ++ Doc.Builder.string(denominator)
       },
       GrainValue.BigIntTag(v) => {
-        let ptr = WasmI32.fromGrain(v)
-        let str = Bigint.bigIntToString(ptr, defaultRadix)
-        ignore(v)
+        let ref = WasmRef.fromGrain(v)
+        let str = Bigint.bigIntToString(ref, defaultRadix)
         Doc.Builder.string(str)
       },
       GrainValue.UnknownNumberTag =>
@@ -350,10 +355,10 @@ module Stringify {
     use WasmI32.{ (+) }
     let usv = untagChar(val)
     let strLength = computeEscapedUSVLength(usv, false, state.topLevel)
-    let str = allocateString(strLength)
-    writeEscapedUSV(usv, str + _STR_DATA_OFFSET, false, state.topLevel)
-    ignore(val)
-    let content = Doc.Builder.string(WasmI32.toGrain(str): String)
+    let strRef = allocateString(strLength)
+    let strData = DataStructures.getStringArrayRef(strRef)
+    writeEscapedUSV(usv, strData, 0n, false, state.topLevel)
+    let content = Doc.Builder.string(WasmRef.toGrain(strRef): String)
     if (state.topLevel) {
       content
     } else {
@@ -418,13 +423,12 @@ module Stringify {
   // Constant Values
   @unsafe
   let constantValueToString = (val: GrainValue.ConstantValue<a>) => {
-    use WasmI32.{ (==) }
-    let v = WasmI32.fromGrain(val)
-    if (v == WasmI32.fromGrain(true)) {
+    let v = WasmRef.fromGrain(val)
+    if (v is WasmRef.fromGrain(true)) {
       Doc.Builder.constantString("true", 4)
-    } else if (v == WasmI32.fromGrain(false)) {
+    } else if (v is WasmRef.fromGrain(false)) {
       Doc.Builder.constantString("false", 5)
-    } else if (v == WasmI32.fromGrain(void)) {
+    } else if (v is WasmRef.fromGrain(void)) {
       Doc.Builder.constantString("void", 4)
     } else {
       Doc.Builder.constantString("<unknown constant value>", 24)
@@ -489,7 +493,7 @@ module Stringify {
       content
     }
   }
-  and tupleHelp = (vals: List<GrainValue.StackTag<a>>, isVariant, state) => {
+  and tupleHelp = (vals: Array<GrainValue.StackTag<a>>, isVariant, state) => {
     let state = { ...state, topLevel: false }
     use Doc.Builder.{ (++) }
     let content = Doc.Builder.parens(
@@ -506,13 +510,13 @@ module Stringify {
               Doc.Builder.group(val ++ Doc.Builder.comma)
             }
           },
-          vals
+          arrayToList(vals)
         )
       )
         ++ Doc.Builder._break
     )
     match (vals) {
-      [_] when !isVariant => Doc.Builder.constantString("box", 3) ++ content,
+      [> _] when !isVariant => Doc.Builder.constantString("box", 3) ++ content,
       _ => content,
     }
   }
@@ -554,13 +558,13 @@ module Stringify {
               Doc.Builder.group(val ++ Doc.Builder.comma)
             }
           },
-          vals
+          arrayToList(vals)
         )
       )
         ++ Doc.Builder._break
     )
   }
-  and _recordHelp = (vals: List<(String, GrainValue.StackTag<a>)>, state) => {
+  and _recordHelp = (vals: Array<(String, GrainValue.StackTag<a>)>, state) => {
     use Doc.Builder.{ (++) }
     Doc.Builder.braces(
       Doc.Builder.indent(
@@ -578,14 +582,14 @@ module Stringify {
             )
             if (final) {
               entry ++ match (vals) {
-                [_] => Doc.Builder.comma,
+                [> _] => Doc.Builder.comma,
                 _ => Doc.Builder.trailingComma,
               }
             } else {
               Doc.Builder.group(entry ++ Doc.Builder.comma)
             }
           },
-          vals
+          arrayToList(vals)
         )
       )
         ++ Doc.Builder._break

@@ -12,7 +12,7 @@ tasks:
   perf:
     cmds:
       - grain compile perf.gr --wat
-      - wasmtime --profile=guest perf.wasm
+      - wasmtime --wasm gc --wasm reference-types --wasm function-references --profile=guest perf.wasm
   format:
     cmds:
       - grain format . -o .

@@ -19,38 +19,16 @@
 @noPervasives
 module GrainValue
 
+from "runtime/unsafe/wasmref" include WasmRef
+use WasmRef.{ module WasmArrayRef }
 from "runtime/unsafe/wasmi32" include WasmI32
-use WasmI32.{
-  (+),
-  (-),
-  (*),
-  remS as (%),
-  (&),
-  (<<),
-  (==),
-  (!=),
-  (>=),
-  (<),
-  (>),
-}
+use WasmI32.{ (+), (-), remS as (%), (&), (<<), (==), (!=), (>=), (<), (>) }
 from "runtime/unsafe/wasmi64" include WasmI64
 from "runtime/unsafe/wasmf32" include WasmF32
 from "runtime/unsafe/wasmf64" include WasmF64
-from "runtime/unsafe/tags" include Tags
-from "runtime/unsafe/offsets" include Offsets
-use Offsets.{
-  _STR_LEN_OFFSET,
-  _STR_DATA_OFFSET,
-  _ARRAY_DATA_OFFSET,
-  _ARRAY_ITEM_SIZE,
-  _INT32_VALUE_OFFSET,
-  _INT64_VALUE_OFFSET,
-  _UINT32_VALUE_OFFSET,
-  _UINT64_VALUE_OFFSET,
-  _FLOAT32_VALUE_OFFSET,
-  _FLOAT64_VALUE_OFFSET,
-}
 from "runtime/unsafe/memory" include Memory
+from "runtime/unsafe/tags" include Tags
+from "runtime/unsafe/conv" include Conv
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
   allocateString,
@@ -61,10 +39,10 @@ use DataStructures.{
 
 exception Impossible(String)
 
+primitive (&&) = "@and"
 primitive arrayLength = "@array.length"
 primitive magic = "@magic"
 primitive builtinId = "@builtin.id"
-primitive ignore = "@ignore"
 primitive throw = "@throw"
 
 @unsafe
@@ -165,23 +143,29 @@ provide enum ShortTag {
 // Stack tagging
 @unsafe
 provide let isSimpleNumberValue = a => {
-  (WasmI32.fromGrain(a) & Tags._GRAIN_NUMBER_TAG_MASK)
-    == Tags._GRAIN_NUMBER_TAG_TYPE
+  let ref = WasmRef.fromGrain(a)
+  WasmRef.isRefI31(ref)
+    && (WasmRef.i31GetU(ref) & Tags._GRAIN_NUMBER_TAG_MASK)
+      == Tags._GRAIN_NUMBER_TAG_TYPE
 }
 @unsafe
 provide let isHeapValue = a => {
-  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_TAG_MASK)
-    == Tags._GRAIN_GENERIC_HEAP_TAG_TYPE
+  let ref = WasmRef.fromGrain(a)
+  WasmRef.isGrainHeapValue(ref)
 }
 @unsafe
 let isConstantValue = a => {
-  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_TAG_MASK)
-    == Tags._GRAIN_CONST_TAG_TYPE
+  let ref = WasmRef.fromGrain(a)
+  WasmRef.isRefI31(ref)
+    && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_TAG_MASK)
+      == Tags._GRAIN_CONST_TAG_TYPE
 }
 @unsafe
 let isShortValue = a => {
-  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_TAG_MASK)
-    == Tags._GRAIN_SHORTVAL_TAG_TYPE
+  let ref = WasmRef.fromGrain(a)
+  WasmRef.isRefI31(ref)
+    && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_TAG_MASK)
+      == Tags._GRAIN_SHORTVAL_TAG_TYPE
 }
 
 /**
@@ -219,9 +203,8 @@ provide let getTag = (value: a) => {
  */
 @unsafe
 provide let getHeapTag = (value: HeapValue<a>) => {
-  let ptr = WasmI32.fromGrain(value)
-  let tag = WasmI32.load(ptr, 0n)
-  ignore(value)
+  let ref = WasmRef.fromGrain(value)
+  let tag = DataStructures.loadValueTag(ref)
   if (tag == Tags._GRAIN_TUPLE_HEAP_TAG) {
     TupleTag(magic(value): TupleValue<b>)
   } else if (tag == Tags._GRAIN_ARRAY_HEAP_TAG) {
@@ -263,9 +246,8 @@ provide let getNumberTag = (value: Number) => {
   if (isSimpleNumberValue(value)) {
     SimpleNumberTag(magic(value): Number)
   } else {
-    let ptr = WasmI32.fromGrain(value)
-    let tag = WasmI32.load(ptr, 4n)
-    ignore(value)
+    let ref = WasmRef.fromGrain(value)
+    let tag = DataStructures.getNumberTag(ref)
     if (tag == Tags._GRAIN_INT64_BOXED_NUM_TAG) {
       Int64Tag(magic(value): Int64)
     } else if (tag == Tags._GRAIN_FLOAT64_BOXED_NUM_TAG) {
@@ -283,28 +265,38 @@ provide let getNumberTag = (value: Number) => {
 // Short tagging
 @unsafe
 let isChar = a => {
-  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
-    == Tags._GRAIN_CHAR_SHORTVAL_TAG
+  let ref = WasmRef.fromGrain(a)
+  WasmRef.isRefI31(ref)
+    && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+      == Tags._GRAIN_CHAR_SHORTVAL_TAG
 }
 @unsafe
 let isInt8 = a => {
-  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
-    == Tags._GRAIN_INT8_TAG_MASK
+  let ref = WasmRef.fromGrain(a)
+  WasmRef.isRefI31(ref)
+    && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+      == Tags._GRAIN_INT8_TAG_MASK
 }
 @unsafe
 let isInt16 = a => {
-  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
-    == Tags._GRAIN_INT16_TAG_MASK
+  let ref = WasmRef.fromGrain(a)
+  WasmRef.isRefI31(ref)
+    && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+      == Tags._GRAIN_INT16_TAG_MASK
 }
 @unsafe
 let isUInt8 = a => {
-  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
-    == Tags._GRAIN_UINT8_TAG_MASK
+  let ref = WasmRef.fromGrain(a)
+  WasmRef.isRefI31(ref)
+    && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+      == Tags._GRAIN_UINT8_TAG_MASK
 }
 @unsafe
 let isUInt16 = a => {
-  (WasmI32.fromGrain(a) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
-    == Tags._GRAIN_UINT16_TAG_MASK
+  let ref = WasmRef.fromGrain(a)
+  WasmRef.isRefI31(ref)
+    && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
+      == Tags._GRAIN_UINT16_TAG_MASK
 }
 
 /**
@@ -338,20 +330,23 @@ provide let getShortTag = (value: ShortValue<a>) => {
  *
  * @param value: The tagged tuple value to extract data from
  *
- * @returns A list of tagged values representing the tuple's fields
+ * @returns An array of tagged values representing the tuple contents
  */
 @unsafe
 provide let getTupleData = (value: TupleValue<a>) => {
-  let mut ptr = WasmI32.fromGrain(value)
-  let len = (WasmI32.load(ptr, 4n) - 1n) * 4n
-  let mut vals = []
-  for (let mut i = len; i >= 0n; i -= 4n) {
-    let fieldPtr = WasmI32.load(ptr, 8n + i)
-    let fieldVal = WasmI32.toGrain(fieldPtr): b
-    vals = [getTag(fieldVal), ...vals]
+  let ref = WasmRef.fromGrain(value)
+  let data = DataStructures.getCompoundValueArrayRef(ref)
+  let arity = WasmArrayRef.length(data)
+  let arrRef = allocateArray(arity, WasmRef.fromGrain(void))
+  let arrData = DataStructures.getCompoundValueArrayRef(arrRef)
+  for (let mut i = 0n; i < arity; i += 1n) {
+    WasmArrayRef.setAny(
+      arrData,
+      i,
+      WasmRef.fromGrain(getTag(WasmRef.toGrain(WasmArrayRef.getAny(data, i))))
+    )
   }
-  ignore(value)
-  vals
+  WasmRef.toGrain(arrRef): Array<StackTag<a>>
 }
 
 /**
@@ -359,21 +354,23 @@ provide let getTupleData = (value: TupleValue<a>) => {
  *
  * @param value: The tagged array value to extract data from
  *
- * @returns A list of tagged values representing the array's elements
+ * @returns An array of tagged values representing the array's elements
  */
 @unsafe
 provide let getArrayData = (value: Array<a>) => {
-  let mut ptr = WasmI32.fromGrain(value)
-  ptr += _ARRAY_DATA_OFFSET
-  let len = (untagSimpleNumber(arrayLength(value)) - 1n) * _ARRAY_ITEM_SIZE
-  let mut vals = []
-  for (let mut i = len; i >= 0n; i -= _ARRAY_ITEM_SIZE) {
-    let elementPtr = WasmI32.load(ptr, i)
-    let elementVal = WasmI32.toGrain(elementPtr): b
-    vals = [getTag(elementVal), ...vals]
+  let ref = WasmRef.fromGrain(value)
+  let data = DataStructures.getCompoundValueArrayRef(ref)
+  let arity = WasmArrayRef.length(data)
+  let arrRef = allocateArray(arity, WasmRef.fromGrain(void))
+  let arrData = DataStructures.getCompoundValueArrayRef(arrRef)
+  for (let mut i = 0n; i < arity; i += 1n) {
+    WasmArrayRef.setAny(
+      arrData,
+      i,
+      WasmRef.fromGrain(getTag(WasmRef.toGrain(WasmArrayRef.getAny(data, i))))
+    )
   }
-  ignore(value)
-  vals
+  WasmRef.toGrain(arrRef): Array<StackTag<a>>
 }
 
 /**
@@ -394,7 +391,9 @@ module TypeMetaData {
   provide let findTypeMetadata = typeHash => {
     // Get the pointer to the type metadata table
     let mut typeMetadata = typeMetadata()
+    if (typeMetadata == 0n) return -1n // No metadata registered
     let numBuckets = WasmI32.load(typeMetadata, 0n)
+    if (WasmI32.eqz(numBuckets)) return -1n // No buckets in metadata table
     // Locate the block
     let bucketHash = (typeHash % numBuckets) << 3n // 8 bytes per entry
     let bucketPtr = typeMetadata + 8n + bucketHash // First 8 bytes of metadata are for table size
@@ -442,30 +441,29 @@ module TypeMetaData {
       let metaDataEndPtr = metaDataPtr + metaDataSize
       let mut metaDataPtr = metaDataPtr + 4n // Skip block size field
       // Read Blocks
-      let fieldArray = allocateArray(arity)
+      let fieldArrayRef = allocateArray(arity, WasmRef.fromGrain(void))
+      let fieldArrayData = DataStructures.getCompoundValueArrayRef(
+        fieldArrayRef
+      )
       for (let mut i = 0n; i < arity; i += 1n) {
         if (metaDataPtr > metaDataEndPtr)
           throw Impossible("Invalid record metadata")
         // Read the field
         let fieldBlockSize = WasmI32.load(metaDataPtr, 0n)
         let fieldLength = WasmI32.load(metaDataPtr, 4n)
-        let fieldName = allocateString(fieldLength)
-        Memory.copy(
-          fieldName + _STR_LEN_OFFSET,
-          metaDataPtr + 4n, // +4 to skip field size
-          fieldLength + 4n // +4 for 32-bit field length
+        let fieldNameRef = allocateString(fieldLength)
+        let fieldNameData = DataStructures.getStringArrayRef(fieldNameRef)
+        Memory.copyLinearMemoryToRefArray(
+          fieldNameData,
+          metaDataPtr + 8n, // +4 to skip field size
+          fieldLength // +4 for 32-bit field length
         )
         // Write to array
-        Memory.incRef(fieldName)
-        WasmI32.store(
-          fieldArray,
-          fieldName,
-          _ARRAY_DATA_OFFSET + i * _ARRAY_ITEM_SIZE
-        )
+        WasmArrayRef.setAny(fieldArrayData, i, fieldNameRef)
         // Advance to next field
         metaDataPtr += fieldBlockSize
       }
-      WasmI32.toGrain(fieldArray): Array<String>
+      WasmRef.toGrain(fieldArrayRef): Array<String>
     }
   }
 
@@ -525,40 +523,40 @@ module TypeMetaData {
         }
         // Read Variant Name
         let nameLength = WasmI32.load(currentPtr, 12n)
-        let name = allocateString(nameLength)
-        Memory.copy(
-          name + _STR_LEN_OFFSET,
-          currentPtr + 12n, // +16 to skip size(4) + offset(4) + id(4)
-          nameLength + 4n // +4 for 32-bit field length
+        let nameRef = allocateString(nameLength)
+        let nameData = DataStructures.getStringArrayRef(nameRef)
+        Memory.copyLinearMemoryToRefArray(
+          nameData,
+          currentPtr + 16n, // +16 to skip size(4) + offset(4) + id(4)
+          nameLength // +4 for 32-bit field length
         )
         // Read Variant Fields
         let fieldOffset = WasmI32.load(currentPtr, 4n)
-        if (fieldOffset == 0n) return (WasmI32.toGrain(name): String, [>]) // Tuple variant
-        let fieldArray = allocateArray(arity)
+        if (fieldOffset == 0n) return (WasmRef.toGrain(nameRef): String, [>]) // Tuple variant
+        let fieldArrayRef = allocateArray(arity, WasmRef.fromGrain(void))
+        let fieldArrayData = DataStructures.getCompoundValueArrayRef(
+          fieldArrayRef
+        )
         let mut fieldMetaDataPtr = currentPtr + fieldOffset
         for (let mut i = 0n; i < arity; i += 1n) {
           // Read the field
           let fieldBlockSize = WasmI32.load(fieldMetaDataPtr, 0n)
           let fieldLength = WasmI32.load(fieldMetaDataPtr, 4n)
-          let fieldName = allocateString(fieldLength)
-          Memory.copy(
-            fieldName + _STR_LEN_OFFSET,
-            fieldMetaDataPtr + 4n, // +4 to skip field size
-            fieldLength + 4n // +4 for 32-bit field length
+          let fieldNameRef = allocateString(fieldLength)
+          let fieldNameData = DataStructures.getStringArrayRef(fieldNameRef)
+          Memory.copyLinearMemoryToRefArray(
+            fieldNameData,
+            fieldMetaDataPtr + 8n, // +4 to skip field size
+            fieldLength // +4 for 32-bit field length
           )
           // Write to array
-          Memory.incRef(fieldName)
-          WasmI32.store(
-            fieldArray,
-            fieldName,
-            _ARRAY_DATA_OFFSET + i * _ARRAY_ITEM_SIZE
-          )
+          WasmArrayRef.setAny(fieldArrayData, i, fieldNameRef)
           // Advance to next field
           fieldMetaDataPtr += fieldBlockSize
         }
         return (
-          WasmI32.toGrain(name): String,
-          WasmI32.toGrain(fieldArray): Array<String>,
+          WasmRef.toGrain(nameRef): String,
+          WasmRef.toGrain(fieldArrayRef): Array<String>,
         )
       }
       throw Impossible("Invalid variant metadata")
@@ -571,31 +569,23 @@ module TypeMetaData {
  *
  * @param record_: The tagged record value to extract data from
  *
- * @returns An associated list of field names and their tagged values
+ * @returns An associated array of field names and their corresponding tagged values
  */
 @unsafe
 provide let getRecordData = (record_: RecordValue<a>) => {
-  // ╔══════╦═══════════╤═══════════╤══════════╤════════╤═══════╤═════╤═══════╗
-  // ║ size ║ 32        │ 32        │ 32       │ 32     │ 32    │ 32  │ 32    ║
-  // ╠══════╬═══════════╪═══════════╪══════════╪════════╪═══════╪═════╪═══════╣
-  // ║ what ║ value tag │ type hash │ type tag │ length │ elt_0 │ ... │ elt_n ║
-  // ╚══════╩═══════════╧═══════════╧══════════╧════════╧═══════╧═════╧═══════╝
-  let mut ptr = WasmI32.fromGrain(record_)
-  let typeHash = untagSimpleNumber(
-    WasmI32.toGrain(WasmI32.load(ptr, 4n)): Number
-  )
-  let typeTag = untagSimpleNumber(
-    WasmI32.toGrain(WasmI32.load(ptr, 8n)): Number
-  )
-  let arity = WasmI32.load(ptr, 12n)
-  ptr += 16n + (arity - 1n) * 4n // Advance to the start of the last element
+  let ref = WasmRef.fromGrain(record_)
+  let data = DataStructures.getCompoundValueArrayRef(ref)
+  let typeHash = untagSimpleNumber(DataStructures.loadRecordTypeHash(ref))
+  let typeTag = untagSimpleNumber(DataStructures.loadRecordTypeId(ref))
+  let arity = WasmArrayRef.length(data)
   // Lookup Metadata
   let metaDataPtr = TypeMetaData.findTypeMetadata(typeHash)
   // Get field names
   let fieldNames = TypeMetaData.getRecordMetaData(metaDataPtr, typeTag, arity)
   let fieldNamesLen = untagSimpleNumber(arrayLength(fieldNames))
   // Get field data
-  let mut fieldData = []
+  let fieldRef = allocateArray(arity, WasmRef.fromGrain(void))
+  let fieldData = DataStructures.getCompoundValueArrayRef(fieldRef)
   for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
     // Determine field name
     let name = if (fieldNamesLen == 0n) {
@@ -604,15 +594,11 @@ provide let getRecordData = (record_: RecordValue<a>) => {
       fieldNames[tagSimpleNumber(i)]
     }
     // Determine field value
-    let fieldPtr = WasmI32.load(ptr, 0n)
-    let fieldValue = WasmI32.toGrain(fieldPtr): b
-    let value = getTag(fieldValue)
-    ptr -= 4n // Move to previous element
+    let value = getTag(WasmArrayRef.getAny(data, i))
     // Pack data
-    fieldData = [(name, value), ...fieldData]
+    WasmArrayRef.setAny(fieldData, i, WasmRef.fromGrain((name, value)))
   }
-  ignore(record_)
-  fieldData
+  WasmRef.toGrain(fieldRef): Array<(String, StackTag<b>)>
 }
 
 /**
@@ -624,9 +610,9 @@ provide enum VariantType<a> {
   /** A variant with no attached data. */
   EmptyVariant,
   /** A variant with tuple data attached. */
-  TupleVariant(List<StackTag<a>>),
+  TupleVariant(Array<StackTag<a>>),
   /** A variant with record data attached. */
-  RecordVariant(List<(String, StackTag<a>)>),
+  RecordVariant(Array<(String, StackTag<a>)>),
 }
 
 /**
@@ -638,23 +624,12 @@ provide enum VariantType<a> {
  */
 @unsafe
 provide let getVariantData = (variant: ADTValue<a>) => {
-  // ╔══════╦═══════════╤═══════════╤══════════╤═════════════╤═══════╤═══════╤═════╤═══════╗
-  // ║ size ║ 32        │ 32        │ 32       │ 32          │ 32    │ 32    │ 32  │ 32    ║
-  // ╠══════╬═══════════╪═══════════╪══════════╪═════════════╪═══════╪═══════╪═════╪═══════╣
-  // ║ what ║ value tag │ type hash │ type tag │ variant tag │ arity │ elt_0 │ ... │ elt_n ║
-  // ╚══════╩═══════════╧═══════════╧══════════╧═════════════╧═══════╧═══════╧═════╧═══════╝
-  let mut ptr = WasmI32.fromGrain(variant)
-  let typeHash = untagSimpleNumber(
-    WasmI32.toGrain(WasmI32.load(ptr, 4n)): Number
-  )
-  let typeTag = untagSimpleNumber(
-    WasmI32.toGrain(WasmI32.load(ptr, 8n)): Number
-  )
-  let variantTag = untagSimpleNumber(
-    WasmI32.toGrain(WasmI32.load(ptr, 12n)): Number
-  )
-  let arity = WasmI32.load(ptr, 16n)
-  ptr += 20n + (arity - 1n) * 4n // Advance to the start of the last element
+  let ref = WasmRef.fromGrain(variant)
+  let data = DataStructures.getCompoundValueArrayRef(ref)
+  let typeHash = untagSimpleNumber(DataStructures.loadVariantTypeHash(ref))
+  let typeTag = untagSimpleNumber(DataStructures.loadVariantTypeId(ref))
+  let variantTag = untagSimpleNumber(DataStructures.loadAdtVariant(ref))
+  let arity = WasmArrayRef.length(data)
   // Lookup Metadata
   let metaDataPtr = TypeMetaData.findTypeMetadata(typeHash)
   // Get Names
@@ -667,37 +642,34 @@ provide let getVariantData = (variant: ADTValue<a>) => {
   let fieldNamesLen = untagSimpleNumber(arrayLength(fields))
   if (arity == 0n) return (name, EmptyVariant)
   // Get Data
-  let data = allocateArray(arity)
+  let valuesRef = allocateArray(arity, WasmRef.fromGrain(void))
+  let valuesData = DataStructures.getCompoundValueArrayRef(valuesRef)
   for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
     // Determine field value
-    let fieldPtr = WasmI32.load(ptr, 0n)
-    let fieldValue = WasmI32.toGrain(fieldPtr): c
-    let value = getTag(fieldValue)
-    ptr -= 4n // Move to previous element
+    let value = getTag(WasmArrayRef.getAny(data, i))
     // Write to data array
-    let valuePtr = WasmI32.fromGrain(value)
-    Memory.incRef(valuePtr)
-    WasmI32.store(data, valuePtr, _ARRAY_DATA_OFFSET + i * _ARRAY_ITEM_SIZE)
+    if (fieldNamesLen == 0n) {
+      // Tuple Variant
+      WasmArrayRef.setAny(valuesData, i, WasmRef.fromGrain(value))
+    } else {
+      // Record Variant
+      WasmArrayRef.setAny(
+        valuesData,
+        i,
+        WasmRef.fromGrain((fields[tagSimpleNumber(i)], value))
+      )
+    }
   }
-  let data = WasmI32.toGrain(data): Array<StackTag<b>>
-  ignore(variant)
   // Pack Data
   return if (fieldNamesLen == 0n) {
     // Tuple Variant
-    let mut fieldValues = []
-    for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
-      fieldValues = [data[tagSimpleNumber(i)], ...fieldValues]
-    }
-    (name, TupleVariant(fieldValues))
+    (name, TupleVariant(WasmRef.toGrain(valuesRef): Array<StackTag<b>>))
   } else {
     // Record Variant
-    let mut fieldData = []
-    for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
-      let name = fields[tagSimpleNumber(i)]
-      let value = data[tagSimpleNumber(i)]
-      fieldData = [(name, value), ...fieldData]
-    }
-    (name, RecordVariant(fieldData))
+    (
+      name,
+      RecordVariant(WasmRef.toGrain(valuesRef): Array<(String, StackTag<b>)>),
+    )
   }
 }
 
@@ -710,17 +682,14 @@ provide let getVariantData = (variant: ADTValue<a>) => {
  */
 @unsafe
 provide let isListVariant = (value: ADTValue<a>) => {
-  let ptr = WasmI32.fromGrain(value)
-  let typeId = untagSimpleNumber(WasmI32.toGrain(WasmI32.load(ptr, 8n)): Number)
+  let ref = WasmRef.fromGrain(value)
+  let typeId = untagSimpleNumber(DataStructures.loadVariantTypeId(ref))
   typeId == _LIST_ID
 }
 
 @unsafe
 provide let getInt32Value = (value: Int32) => {
-  let ptr = WasmI32.fromGrain(value)
-  let num = WasmI32.load(ptr, _INT32_VALUE_OFFSET)
-  ignore(value)
-  num
+  Conv.fromInt32(value)
 }
 
 /**
@@ -732,10 +701,7 @@ provide let getInt32Value = (value: Int32) => {
  */
 @unsafe
 provide let getInt64Value = (value: Int64) => {
-  let ptr = WasmI32.fromGrain(value)
-  let num = WasmI64.load(ptr, _INT64_VALUE_OFFSET)
-  ignore(value)
-  num
+  Conv.fromInt64(value)
 }
 
 /**
@@ -747,10 +713,7 @@ provide let getInt64Value = (value: Int64) => {
  */
 @unsafe
 provide let getUint32Value = (value: Uint32) => {
-  let ptr = WasmI32.fromGrain(value)
-  let num = WasmI32.load(ptr, _UINT32_VALUE_OFFSET)
-  ignore(value)
-  num
+  Conv.fromUint32(value)
 }
 
 /**
@@ -762,10 +725,7 @@ provide let getUint32Value = (value: Uint32) => {
  */
 @unsafe
 provide let getUint64Value = (value: Uint64) => {
-  let ptr = WasmI32.fromGrain(value)
-  let num = WasmI64.load(ptr, _UINT64_VALUE_OFFSET)
-  ignore(value)
-  num
+  Conv.fromUint64(value)
 }
 
 /**
@@ -777,10 +737,7 @@ provide let getUint64Value = (value: Uint64) => {
  */
 @unsafe
 provide let getFloat32Value = (value: Float32) => {
-  let ptr = WasmI32.fromGrain(value)
-  let num = WasmF32.load(ptr, _FLOAT32_VALUE_OFFSET)
-  ignore(value)
-  num
+  Conv.fromFloat32(value)
 }
 
 /**
@@ -792,8 +749,5 @@ provide let getFloat32Value = (value: Float32) => {
  */
 @unsafe
 provide let getFloat64Value = (value: Float64) => {
-  let ptr = WasmI32.fromGrain(value)
-  let num = WasmF64.load(ptr, _FLOAT64_VALUE_OFFSET)
-  ignore(value)
-  num
+  Conv.fromFloat64(value)
 }

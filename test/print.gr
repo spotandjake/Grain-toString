@@ -7,8 +7,12 @@
 @noPervasives
 module Print
 
+from "runtime/unsafe/wasmRef" include WasmRef
+use WasmRef.{ module WasmArrayRef }
 from "runtime/unsafe/wasmi32" include WasmI32
 from "runtime/unsafe/memory" include Memory
+from "runtime/malloc" include Malloc
+from "runtime/dataStructures" include DataStructures
 from "runtime/string" include String
 
 foreign wasm fd_write:
@@ -31,20 +35,28 @@ primitive ignore = "@ignore"
 provide let print = (value: String, suffix="\n") => {
   use WasmI32.{ (+) }
   // First convert the value to string, if it isn't one already.
-  let valuePtr = WasmI32.fromGrain(value)
-  let combined = String.concat(value, suffix)
-  let ptr = WasmI32.fromGrain(combined)
+  let valueRef = DataStructures.getStringArrayRef(WasmRef.fromGrain(value))
+  let suffixRef = DataStructures.getStringArrayRef(WasmRef.fromGrain(suffix))
+  let valueLength = WasmArrayRef.length(valueRef)
+  let suffixLength = WasmArrayRef.length(suffixRef)
+  let length = valueLength + suffixLength
+  let ptr = Malloc.malloc(length)
+  Memory.copyRefArrayToLinearMemory(ptr, valueRef, valueLength)
+  Memory.copyRefArrayToLinearMemory(ptr + valueLength, suffixRef, suffixLength)
+
   // iov: [<ptr to string> <nbytes of string>]
   // buf: <iov> <written>
   // fd_write(STDOUT (1), iov, len(iov), written)
-  let buf = Memory.malloc(20n)
+  let buf = Malloc.malloc(12n)
   let iov = buf
-  let written = buf + 16n
-  WasmI32.store(iov, ptr + 8n, 0n)
-  WasmI32.store(iov, WasmI32.load(ptr, 4n), 4n)
+  let written = buf + 8n
+  WasmI32.store(iov, ptr, 0n)
+  WasmI32.store(iov, length, 4n)
+
   fd_write(1n, iov, 1n, written)
-  Memory.free(buf)
-  ignore(value)
-  ignore(suffix)
+
+  Malloc.free(buf)
+  Malloc.free(ptr)
+
   void
 }
