@@ -127,6 +127,7 @@ from "./miniBuffer.gr" include MiniBuffer
 
 primitive (||) = "@or"
 primitive throw = "@throw"
+primitive arrayLength = "@array.length"
 
 exception Impossible(String)
 
@@ -474,6 +475,7 @@ provide module Builder {
         ),
     }
   }
+
   /**
    * Maps over a list, applying the given function to each element
    * and concatenating the results.
@@ -491,6 +493,43 @@ provide module Builder {
       [] => empty,
       [first, ..._] => concatMapHelp(sep, trail, func, lead(first), lst),
     }
+  }
+
+  /**
+   * Maps over an array, applying the given function to each element
+   * and concatenating the results.
+   *
+   * @param sep: A function that produces a separator to be placed between elements
+   * @param lead: A function that produces a leading document before the first element
+   * @param trail: A function that produces a trailing document after the last element
+   * @param func: A function that produces a document for each element
+   * @param arr: The array of elements to map over
+   *
+   * @returns A LayoutNode that represents the concatenated mapped documents
+   */
+  @unsafe
+  provide let concatArrayMap = (sep, lead, trail, func, arr: Array<a>) => {
+    use WasmI32.{ (+), (-), (<), (==) }
+    let arrLen = untagSimpleNumber(arrayLength(arr))
+    if (arrLen == 0n) return empty
+    let arrRef = WasmRef.fromGrain(arr)
+    let arrData = DataStructures.getCompoundValueArrayRef(arrRef)
+    let first = arr[0]
+    let mut acc = lead(first)
+    if (arrLen == 1n) {
+      return acc ++ func(final=true, first) ++ trail(first)
+    }
+    for (let mut i = 0n; i < arrLen; i += 1n) {
+      let elem = WasmRef.toGrain(WasmArrayRef.getAny(arrData, i)): a
+      if (i == arrLen - 1n) {
+        acc = acc ++ func(final=true, elem) ++ trail(elem)
+      } else {
+        let next = WasmRef.toGrain(WasmArrayRef.getAny(arrData, i + 1n)): a
+        acc = acc ++ func(final=false, elem) ++ sep(elem, next)
+      }
+    }
+
+    return acc
   }
 
   /**

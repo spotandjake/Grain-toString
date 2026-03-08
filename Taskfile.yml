@@ -19,6 +19,7 @@ tasks:
       - echo "Testing"
       - task: test:default
       - task: test:sizeTest
+      - task: test:sizeInspect
     silent: true
   format:
     cmds:

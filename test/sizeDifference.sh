@@ -1,7 +1,7 @@
 # Compute Sizes
 echo "Compiling Programs..."
-grain compile HelloWorldGrain.gr --release --wat
-grain compile HelloWorld.gr --release --wat
+grain compile HelloWorldGrain.gr --release --wat --elide-type-info
+grain compile HelloWorld.gr --release --wat --elide-type-info
 # Get Sizes
 grainSize=$(wc -c HelloWorldGrain.wasm | awk '{print $1}')
 librarySize=$(wc -c HelloWorld.wasm | awk '{print $1}')

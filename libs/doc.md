@@ -414,6 +414,34 @@ Returns:
 | ------------ | -------------------------------------------------------------- |
 | `LayoutNode` | A LayoutNode that represents the concatenated mapped documents |
 
+#### Doc.Builder.**concatArrayMap**
+
+```grain
+concatArrayMap:
+  (sep: ((a, a) => LayoutNode), lead: (a => LayoutNode),
+   trail: (a => LayoutNode), func: ((final: Bool, a) => LayoutNode),
+   arr: Array<a>) => LayoutNode
+```
+
+Maps over an array, applying the given function to each element
+and concatenating the results.
+
+Parameters:
+
+| param   | type                             | description                                                          |
+| ------- | -------------------------------- | -------------------------------------------------------------------- |
+| `sep`   | `(a, a) => LayoutNode`           | A function that produces a separator to be placed between elements   |
+| `lead`  | `a => LayoutNode`                | A function that produces a leading document before the first element |
+| `trail` | `a => LayoutNode`                | A function that produces a trailing document after the last element  |
+| `func`  | `(final: Bool, a) => LayoutNode` | A function that produces a document for each element                 |
+| `arr`   | `Array<a>`                       | The array of elements to map over                                    |
+
+Returns:
+
+| type         | description                                                    |
+| ------------ | -------------------------------------------------------------- |
+| `LayoutNode` | A LayoutNode that represents the concatenated mapped documents |
+
 #### Doc.Builder.**breakableSpace**
 
 ```grain

@@ -13,211 +13,13 @@ Note:
 
 Type declarations included in the GrainValue module.
 
-### GrainValue.**HeapValue**
-
-```grain
-type HeapValue<a>
-```
-
-Represents a generic grain heap value.
-
-### GrainValue.**ShortValue**
-
-```grain
-type ShortValue<a>
-```
-
-Represents a generic short value.
-
-### GrainValue.**ConstantValue**
-
-```grain
-type ConstantValue<a>
-```
-
-Represents a generic constant value.
-
-### GrainValue.**TupleValue**
-
-```grain
-type TupleValue<a>
-```
-
-Represents a generic tuple value.
-
-### GrainValue.**RecordValue**
-
-```grain
-type RecordValue<a>
-```
-
-Represents a generic record value.
-
-### GrainValue.**ADTValue**
-
-```grain
-type ADTValue<a>
-```
-
-Represents a generic ADT value.
-
-### GrainValue.**LambdaValue**
-
-```grain
-type LambdaValue<a>
-```
-
-Represents a generic lambda value.
-
-### GrainValue.**NumberTag**
-
-```grain
-enum NumberTag {
-  SimpleNumberTag(Number),
-  Int64Tag(Int64),
-  Float64Tag(Float64),
-  RationalTag(Rational),
-  BigIntTag(BigInt),
-  UnknownNumberTag,
-}
-```
-
-Represents a tagged number value.
-
-### GrainValue.**StackTag**
-
-```grain
-enum StackTag<a> {
-  NumberTag(Number),
-  HeapTag(HeapValue<a>),
-  ShortTag(ShortValue<a>),
-  UnknownTag,
-  ConstantTag(ConstantValue<a>),
-}
-```
-
-Represents a tagged stack value.
-
-Note: The `a` is `forall a`, meaning we never want to unify it.
-
-Variants:
-
-```grain
-NumberTag(Number)
-```
-
-simple number - 0bxx1
-
-```grain
-HeapTag(HeapValue<a>)
-```
-
-heap value - 0b00x
-
-```grain
-ShortTag(ShortValue<a>)
-```
-
-short value - 0b01x
-
-```grain
-UnknownTag
-```
-
-reserved tag - 0b10x
-
-```grain
-ConstantTag(ConstantValue<a>)
-```
-
-constant tag - 0b11x
-
-### GrainValue.**HeapTag**
-
-```grain
-enum HeapTag<a> {
-  TupleTag(TupleValue<a>),
-  ArrayTag(Array<a>),
-  RecordTag(RecordValue<a>),
-  ADTTag(ADTValue<a>),
-  ClosureTag(LambdaValue<a>),
-  StringTag(String),
-  BytesTag(Bytes),
-  BoxedNumberTag(Number),
-  Int32Tag(Int32),
-  Float32Tag(Float32),
-  Uint32Tag(Uint32),
-  Uint64Tag(Uint64),
-  UnknownTag,
-}
-```
-
-Represents a tagged heap value.
-
-Note: The `a` is `forall a`, meaning we never want to unify it.
-
-### GrainValue.**ShortTag**
-
-```grain
-enum ShortTag {
-  CharTag(Char),
-  Int8Tag(Int8),
-  Int16Tag(Int16),
-  Uint8Tag(Uint8),
-  Uint16Tag(Uint16),
-  UnknownShortTag,
-}
-```
-
-Represents a tagged short value.
-
-Note: The `a` is `forall a`, meaning we never want to unify it.
-
-Variants:
-
-```grain
-CharTag(Char)
-```
-
-Char - 0b00000
-
-```grain
-Int8Tag(Int8)
-```
-
-Int8 - 0b00001
-
-```grain
-Int16Tag(Int16)
-```
-
-Int16 - 0b00010
-
-```grain
-Uint8Tag(Uint8)
-```
-
-Uint8 - 0b00011
-
-```grain
-Uint16Tag(Uint16)
-```
-
-Uint16 - 0b00100
-
-```grain
-UnknownShortTag
-```
-
-Unknown short tag
-
 ### GrainValue.**VariantType**
 
 ```grain
 enum VariantType<a> {
   EmptyVariant,
-  TupleVariant(Array<StackTag<a>>),
-  RecordVariant(Array<(String, StackTag<a>)>),
+  TupleVariant(Array<WasmRef>),
+  RecordVariant(Array<(String, WasmRef)>),
 }
 ```
 
@@ -234,13 +36,13 @@ EmptyVariant
 A variant with no attached data.
 
 ```grain
-TupleVariant(Array<StackTag<a>>)
+TupleVariant(Array<WasmRef>)
 ```
 
 A variant with tuple data attached.
 
 ```grain
-RecordVariant(Array<(String, StackTag<a>)>)
+RecordVariant(Array<(String, WasmRef)>)
 ```
 
 A variant with record data attached.
@@ -252,298 +54,260 @@ Functions and constants included in the GrainValue module.
 ### GrainValue.**isSimpleNumberValue**
 
 ```grain
-isSimpleNumberValue: (a: a) => Bool
+isSimpleNumberValue: (val: a) => Bool
 ```
+
+Checks if the given grain value is a simple number.
+
+Parameters:
+
+| param | type | description              |
+| ----- | ---- | ------------------------ |
+| `val` | `a`  | The grain value to check |
+
+Returns:
+
+| type   | description                                                     |
+| ------ | --------------------------------------------------------------- |
+| `Bool` | `true` if the grain value is a simple number, `false` otherwise |
 
 ### GrainValue.**isHeapValue**
 
 ```grain
-isHeapValue: (a: a) => Bool
+isHeapValue: (val: a) => Bool
 ```
 
-### GrainValue.**getTag**
-
-```grain
-getTag: (value: a) => StackTag<b>
-```
-
-Provides a tagged stack value based on the value type.
+Checks if the given grain value is a heap value.
 
 Parameters:
 
-| param   | type | description      |
-| ------- | ---- | ---------------- |
-| `value` | `a`  | The value to tag |
+| param | type | description              |
+| ----- | ---- | ------------------------ |
+| `val` | `a`  | The grain value to check |
 
 Returns:
 
-| type          | description                                                                                                                               |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `StackTag<b>` | A tagged value that can be used to extract the value information<br/><br/>Note: The `a` is `forall a`, meaning we never want to unify it. |
+| type   | description                                                  |
+| ------ | ------------------------------------------------------------ |
+| `Bool` | `true` if the grain value is a heap value, `false` otherwise |
 
-### GrainValue.**getHeapTag**
+### GrainValue.**isConstantValue**
 
 ```grain
-getHeapTag: (value: HeapValue<a>) => HeapTag<b>
+isConstantValue: (val: a) => Bool
 ```
 
-Provides a tagged heap value based on the value type.
+Checks if the given grain value is a constant value.
 
 Parameters:
 
-| param   | type           | description           |
-| ------- | -------------- | --------------------- |
-| `value` | `HeapValue<a>` | The heap value to tag |
+| param | type | description              |
+| ----- | ---- | ------------------------ |
+| `val` | `a`  | The grain value to check |
 
 Returns:
 
-| type         | description                                                                                                                                    |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HeapTag<b>` | A tagged heap value that can be used to extract the value information<br/><br/>Note: The `a` is `forall a`, meaning we never want to unify it. |
+| type   | description                                                      |
+| ------ | ---------------------------------------------------------------- |
+| `Bool` | `true` if the grain value is a constant value, `false` otherwise |
 
-### GrainValue.**getNumberTag**
+### GrainValue.**isShortValue**
 
 ```grain
-getNumberTag: (value: Number) => NumberTag
+isShortValue: (val: a) => Bool
 ```
 
-Provides a tagged number value based on the value type.
+Checks if the given grain value is a short value.
 
 Parameters:
 
-| param   | type     | description             |
-| ------- | -------- | ----------------------- |
-| `value` | `Number` | The number value to tag |
+| param | type | description              |
+| ----- | ---- | ------------------------ |
+| `val` | `a`  | The grain value to check |
 
 Returns:
 
-| type        | description                                                             |
-| ----------- | ----------------------------------------------------------------------- |
-| `NumberTag` | A tagged number value that can be used to extract the value information |
+| type   | description                                                   |
+| ------ | ------------------------------------------------------------- |
+| `Bool` | `true` if the grain value is a short value, `false` otherwise |
 
-### GrainValue.**getShortTag**
+### GrainValue.**isChar**
 
 ```grain
-getShortTag: (value: ShortValue<a>) => ShortTag
+isChar: (ref: WasmRef) => Bool
 ```
 
-Provides a tagged short value based on the value type.
+Checks if the given grain value is a char short value.
 
 Parameters:
 
-| param   | type            | description            |
-| ------- | --------------- | ---------------------- |
-| `value` | `ShortValue<a>` | The short value to tag |
+| param | type      | description              |
+| ----- | --------- | ------------------------ |
+| `ref` | `WasmRef` | The grain value to check |
 
 Returns:
 
-| type       | description                                                                                                                                     |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ShortTag` | A tagged short value that can be used to extract the value information<br/><br/>Note: The `a` is `forall a`, meaning we never want to unify it. |
+| type   | description                                                        |
+| ------ | ------------------------------------------------------------------ |
+| `Bool` | `true` if the grain value is a char short value, `false` otherwise |
+
+### GrainValue.**isInt8**
+
+```grain
+isInt8: (ref: WasmRef) => Bool
+```
+
+Checks if the given grain value is a int8 short value.
+
+Parameters:
+
+| param | type      | description              |
+| ----- | --------- | ------------------------ |
+| `ref` | `WasmRef` | The grain value to check |
+
+Returns:
+
+| type   | description                                                        |
+| ------ | ------------------------------------------------------------------ |
+| `Bool` | `true` if the grain value is a int8 short value, `false` otherwise |
+
+### GrainValue.**isInt16**
+
+```grain
+isInt16: (ref: WasmRef) => Bool
+```
+
+Checks if the given grain value is a int16 short value.
+
+Parameters:
+
+| param | type      | description              |
+| ----- | --------- | ------------------------ |
+| `ref` | `WasmRef` | The grain value to check |
+
+Returns:
+
+| type   | description                                                         |
+| ------ | ------------------------------------------------------------------- |
+| `Bool` | `true` if the grain value is a int16 short value, `false` otherwise |
+
+### GrainValue.**isUInt8**
+
+```grain
+isUInt8: (ref: WasmRef) => Bool
+```
+
+Checks if the given grain value is a uint8 short value.
+
+Parameters:
+
+| param | type      | description              |
+| ----- | --------- | ------------------------ |
+| `ref` | `WasmRef` | The grain value to check |
+
+Returns:
+
+| type   | description                                                         |
+| ------ | ------------------------------------------------------------------- |
+| `Bool` | `true` if the grain value is a uint8 short value, `false` otherwise |
+
+### GrainValue.**isUInt16**
+
+```grain
+isUInt16: (ref: WasmRef) => Bool
+```
+
+Checks if the given grain value is a uint16 short value.
+
+Parameters:
+
+| param | type      | description              |
+| ----- | --------- | ------------------------ |
+| `ref` | `WasmRef` | The grain value to check |
+
+Returns:
+
+| type   | description                                                          |
+| ------ | -------------------------------------------------------------------- |
+| `Bool` | `true` if the grain value is a uint16 short value, `false` otherwise |
 
 ### GrainValue.**getTupleData**
 
 ```grain
-getTupleData: (value: TupleValue<a>) => Array<StackTag<a>>
+getTupleData: (ref: WasmRef) => Array<WasmRef>
 ```
 
 Provides the tuples tagged contents.
 
 Parameters:
 
-| param   | type            | description                                 |
-| ------- | --------------- | ------------------------------------------- |
-| `value` | `TupleValue<a>` | The tagged tuple value to extract data from |
+| param | type      | description                                         |
+| ----- | --------- | --------------------------------------------------- |
+| `ref` | `WasmRef` | A reference to the tuple value to extract data from |
 
 Returns:
 
-| type                 | description                                               |
-| -------------------- | --------------------------------------------------------- |
-| `Array<StackTag<a>>` | An array of tagged values representing the tuple contents |
-
-### GrainValue.**getArrayData**
-
-```grain
-getArrayData: (value: Array<a>) => Array<StackTag<a>>
-```
-
-Provides the array's tagged contents.
-
-Parameters:
-
-| param   | type       | description                                 |
-| ------- | ---------- | ------------------------------------------- |
-| `value` | `Array<a>` | The tagged array value to extract data from |
-
-Returns:
-
-| type                 | description                                                 |
-| -------------------- | ----------------------------------------------------------- |
-| `Array<StackTag<a>>` | An array of tagged values representing the array's elements |
+| type             | description                                          |
+| ---------------- | ---------------------------------------------------- |
+| `Array<WasmRef>` | An array of values representing the tuple's elements |
 
 ### GrainValue.**getRecordData**
 
 ```grain
-getRecordData: (record_: RecordValue<a>) => Array<(String, StackTag<b>)>
+getRecordData: (record_: WasmRef) => Array<(String, WasmRef)>
 ```
 
 Provides the record's tagged field data.
 
 Parameters:
 
-| param     | type             | description                                  |
-| --------- | ---------------- | -------------------------------------------- |
-| `record_` | `RecordValue<a>` | The tagged record value to extract data from |
+| param     | type      | description                                  |
+| --------- | --------- | -------------------------------------------- |
+| `record_` | `WasmRef` | The tagged record value to extract data from |
 
 Returns:
 
-| type                           | description                                                              |
-| ------------------------------ | ------------------------------------------------------------------------ |
-| `Array<(String, StackTag<b>)>` | An associated array of field names and their corresponding tagged values |
+| type                       | description                                                              |
+| -------------------------- | ------------------------------------------------------------------------ |
+| `Array<(String, WasmRef)>` | An associated array of field names and their corresponding tagged values |
 
 ### GrainValue.**getVariantData**
 
 ```grain
-getVariantData: (variant: ADTValue<a>) => (String, VariantType<b>)
+getVariantData: (ref: WasmRef) => (String, VariantType<a>)
 ```
 
 Provides the variant's tagged field data.
 
 Parameters:
 
-| param     | type          | description                                   |
-| --------- | ------------- | --------------------------------------------- |
-| `variant` | `ADTValue<a>` | The tagged variant value to extract data from |
+| param | type      | description                                           |
+| ----- | --------- | ----------------------------------------------------- |
+| `ref` | `WasmRef` | A reference to the variant value to extract data from |
 
 Returns:
 
 | type                       | description                            |
 | -------------------------- | -------------------------------------- |
-| `(String, VariantType<b>)` | The name and field data of the variant |
+| `(String, VariantType<a>)` | The name and field data of the variant |
 
 ### GrainValue.**isListVariant**
 
 ```grain
-isListVariant: (value: ADTValue<a>) => Bool
+isListVariant: (ref: WasmRef) => Bool
 ```
 
 Checks if the given ADT value is a List variant.
 
 Parameters:
 
-| param   | type          | description             |
-| ------- | ------------- | ----------------------- |
-| `value` | `ADTValue<a>` | The ADT value to check. |
+| param | type      | description             |
+| ----- | --------- | ----------------------- |
+| `ref` | `WasmRef` | The ADT value to check. |
 
 Returns:
 
 | type   | description                                                   |
 | ------ | ------------------------------------------------------------- |
 | `Bool` | `true` if the ADT value is a List variant, `false` otherwise. |
-
-### GrainValue.**getInt32Value**
-
-```grain
-getInt32Value: (value: Int32) => WasmI32
-```
-
-### GrainValue.**getInt64Value**
-
-```grain
-getInt64Value: (value: Int64) => WasmI64
-```
-
-Extracts the unsafe value from a Grain Int64.
-
-Parameters:
-
-| param   | type    | description        |
-| ------- | ------- | ------------------ |
-| `value` | `Int64` | The value to extra |
-
-Returns:
-
-| type      | description      |
-| --------- | ---------------- |
-| `WasmI64` | The unsafe value |
-
-### GrainValue.**getUint32Value**
-
-```grain
-getUint32Value: (value: Uint32) => WasmI32
-```
-
-Extracts the unsafe value from a Grain Uint32.
-
-Parameters:
-
-| param   | type     | description          |
-| ------- | -------- | -------------------- |
-| `value` | `Uint32` | The value to extract |
-
-Returns:
-
-| type      | description      |
-| --------- | ---------------- |
-| `WasmI32` | The unsafe value |
-
-### GrainValue.**getUint64Value**
-
-```grain
-getUint64Value: (value: Uint64) => WasmI64
-```
-
-Extracts the unsafe value from a Grain Uint64.
-
-Parameters:
-
-| param   | type     | description          |
-| ------- | -------- | -------------------- |
-| `value` | `Uint64` | The value to extract |
-
-Returns:
-
-| type      | description      |
-| --------- | ---------------- |
-| `WasmI64` | The unsafe value |
-
-### GrainValue.**getFloat32Value**
-
-```grain
-getFloat32Value: (value: Float32) => WasmF32
-```
-
-Extracts the unsafe value from a Grain Float32.
-
-Parameters:
-
-| param   | type      | description          |
-| ------- | --------- | -------------------- |
-| `value` | `Float32` | The value to extract |
-
-Returns:
-
-| type      | description      |
-| --------- | ---------------- |
-| `WasmF32` | The unsafe value |
-
-### GrainValue.**getFloat64Value**
-
-```grain
-getFloat64Value: (value: Float64) => WasmF64
-```
-
-Extracts the unsafe value from a Grain Float64.
-
-Parameters:
-
-| param   | type      | description          |
-| ------- | --------- | -------------------- |
-| `value` | `Float64` | The value to extract |
-
-Returns:
-
-| type      | description      |
-| --------- | ---------------- |
-| `WasmF64` | The unsafe value |
 

@@ -23,12 +23,8 @@ from "runtime/unsafe/wasmref" include WasmRef
 use WasmRef.{ module WasmArrayRef }
 from "runtime/unsafe/wasmi32" include WasmI32
 use WasmI32.{ (+), (-), remS as (%), (&), (<<), (==), (!=), (>=), (<), (>) }
-from "runtime/unsafe/wasmi64" include WasmI64
-from "runtime/unsafe/wasmf32" include WasmF32
-from "runtime/unsafe/wasmf64" include WasmF64
 from "runtime/unsafe/memory" include Memory
 from "runtime/unsafe/tags" include Tags
-from "runtime/unsafe/conv" include Conv
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
   allocateString,
@@ -41,7 +37,6 @@ exception Impossible(String)
 
 primitive (&&) = "@and"
 primitive arrayLength = "@array.length"
-primitive magic = "@magic"
 primitive builtinId = "@builtin.id"
 primitive throw = "@throw"
 
@@ -54,323 +49,153 @@ let _RESULT_ID = untagSimpleNumber(builtinId("Result"))
 @unsafe
 let _RANGE_ID = untagSimpleNumber(builtinId("Range"))
 
-/** Represents a generic grain heap value. */
-abstract type HeapValue<a> = a
-/** Represents a generic short value. */
-abstract type ShortValue<a> = a
-/** Represents a generic constant value. */
-abstract type ConstantValue<a> = a
-/** Represents a generic tuple value. */
-abstract type TupleValue<a> = a
-/** Represents a generic record value. */
-abstract type RecordValue<a> = a
-/** Represents a generic ADT value. */
-abstract type ADTValue<a> = a
-/** Represents a generic lambda value. */
-abstract type LambdaValue<a> = a
-
-/**
- * Represents a tagged number value.
- */
-provide enum NumberTag {
-  SimpleNumberTag(Number),
-  Int64Tag(Int64),
-  Float64Tag(Float64),
-  RationalTag(Rational),
-  BigIntTag(BigInt),
-  UnknownNumberTag,
-}
-
-/**
- * Represents a tagged stack value.
- *
- * Note: The `a` is `forall a`, meaning we never want to unify it.
- */
-provide enum StackTag<a> {
-  /** simple number - 0bxx1 */
-  NumberTag(Number),
-  /** heap value - 0b00x */
-  HeapTag(HeapValue<a>),
-  /** short value - 0b01x */
-  ShortTag(ShortValue<a>),
-  /** reserved tag - 0b10x */
-  UnknownTag,
-  /** constant tag - 0b11x */
-  ConstantTag(ConstantValue<a>),
-}
-
-/**
- * Represents a tagged heap value.
- *
- * Note: The `a` is `forall a`, meaning we never want to unify it.
- */
-provide enum HeapTag<a> {
-  TupleTag(TupleValue<a>),
-  ArrayTag(Array<a>),
-  RecordTag(RecordValue<a>),
-  ADTTag(ADTValue<a>),
-  ClosureTag(LambdaValue<a>),
-  StringTag(String),
-  BytesTag(Bytes),
-  BoxedNumberTag(Number),
-  Int32Tag(Int32),
-  Float32Tag(Float32),
-  Uint32Tag(Uint32),
-  Uint64Tag(Uint64),
-  UnknownTag,
-}
-
-/**
- * Represents a tagged short value.
- *
- * Note: The `a` is `forall a`, meaning we never want to unify it.
- */
-provide enum ShortTag {
-  /** Char - 0b00000 */
-  CharTag(Char),
-  /** Int8 - 0b00001 */
-  Int8Tag(Int8),
-  /** Int16 - 0b00010 */
-  Int16Tag(Int16),
-  /** Uint8 - 0b00011 */
-  Uint8Tag(Uint8),
-  /** Uint16 - 0b00100 */
-  Uint16Tag(Uint16),
-  /** Unknown short tag */
-  UnknownShortTag,
-}
-
 // Stack tagging
+/**
+ * Checks if the given grain value is a simple number.
+ *
+ * @param val: The grain value to check
+ *
+ * @returns `true` if the grain value is a simple number, `false` otherwise
+ */
 @unsafe
-provide let isSimpleNumberValue = a => {
-  let ref = WasmRef.fromGrain(a)
+provide let isSimpleNumberValue = val => {
+  let ref = WasmRef.fromGrain(val)
   WasmRef.isRefI31(ref)
     && (WasmRef.i31GetU(ref) & Tags._GRAIN_NUMBER_TAG_MASK)
       == Tags._GRAIN_NUMBER_TAG_TYPE
 }
+
+/**
+ * Checks if the given grain value is a heap value.
+ *
+ * @param val: The grain value to check
+ *
+ * @returns `true` if the grain value is a heap value, `false` otherwise
+ */
 @unsafe
-provide let isHeapValue = a => {
-  let ref = WasmRef.fromGrain(a)
+provide let isHeapValue = val => {
+  let ref = WasmRef.fromGrain(val)
   WasmRef.isGrainHeapValue(ref)
 }
+
+/**
+ * Checks if the given grain value is a constant value.
+ *
+ * @param val: The grain value to check
+ *
+ * @returns `true` if the grain value is a constant value, `false` otherwise
+ */
 @unsafe
-let isConstantValue = a => {
-  let ref = WasmRef.fromGrain(a)
+provide let isConstantValue = val => {
+  let ref = WasmRef.fromGrain(val)
   WasmRef.isRefI31(ref)
     && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_TAG_MASK)
       == Tags._GRAIN_CONST_TAG_TYPE
 }
+
+/**
+ * Checks if the given grain value is a short value.
+ *
+ * @param val: The grain value to check
+ *
+ * @returns `true` if the grain value is a short value, `false` otherwise
+ */
 @unsafe
-let isShortValue = a => {
-  let ref = WasmRef.fromGrain(a)
+provide let isShortValue = val => {
+  let ref = WasmRef.fromGrain(val)
   WasmRef.isRefI31(ref)
     && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_TAG_MASK)
       == Tags._GRAIN_SHORTVAL_TAG_TYPE
 }
 
-/**
- * Provides a tagged stack value based on the value type.
- *
- * @param value: The value to tag
- *
- * @returns A tagged value that can be used to extract the value information
- *
- * Note: The `a` is `forall a`, meaning we never want to unify it.
- */
-@unsafe
-provide let getTag = (value: a) => {
-  if (isSimpleNumberValue(value)) {
-    NumberTag(magic(value): Number)
-  } else if (isHeapValue(value)) {
-    HeapTag(magic(value): HeapValue<b>)
-  } else if (isShortValue(value)) {
-    ShortTag(magic(value): ShortValue<b>)
-  } else if (isConstantValue(value)) {
-    ConstantTag(magic(value): ConstantValue<b>)
-  } else {
-    UnknownTag
-  }
-}
-
-/**
- * Provides a tagged heap value based on the value type.
- *
- * @param value: The heap value to tag
- *
- * @returns A tagged heap value that can be used to extract the value information
- *
- * Note: The `a` is `forall a`, meaning we never want to unify it.
- */
-@unsafe
-provide let getHeapTag = (value: HeapValue<a>) => {
-  let ref = WasmRef.fromGrain(value)
-  let tag = DataStructures.loadValueTag(ref)
-  if (tag == Tags._GRAIN_TUPLE_HEAP_TAG) {
-    TupleTag(magic(value): TupleValue<b>)
-  } else if (tag == Tags._GRAIN_ARRAY_HEAP_TAG) {
-    ArrayTag(magic(value): Array<b>)
-  } else if (tag == Tags._GRAIN_RECORD_HEAP_TAG) {
-    RecordTag(magic(value): RecordValue<b>)
-  } else if (tag == Tags._GRAIN_ADT_HEAP_TAG) {
-    ADTTag(magic(value): ADTValue<b>)
-  } else if (tag == Tags._GRAIN_LAMBDA_HEAP_TAG) {
-    ClosureTag(magic(value): LambdaValue<b>)
-  } else if (tag == Tags._GRAIN_STRING_HEAP_TAG) {
-    StringTag(magic(value): String)
-  } else if (tag == Tags._GRAIN_BYTES_HEAP_TAG) {
-    BytesTag(magic(value): Bytes)
-  } else if (tag == Tags._GRAIN_BOXED_NUM_HEAP_TAG) {
-    BoxedNumberTag(magic(value): Number)
-  } else if (tag == Tags._GRAIN_INT32_HEAP_TAG) {
-    Int32Tag(magic(value): Int32)
-  } else if (tag == Tags._GRAIN_FLOAT32_HEAP_TAG) {
-    Float32Tag(magic(value): Float32)
-  } else if (tag == Tags._GRAIN_UINT32_HEAP_TAG) {
-    Uint32Tag(magic(value): Uint32)
-  } else if (tag == Tags._GRAIN_UINT64_HEAP_TAG) {
-    Uint64Tag(magic(value): Uint64)
-  } else {
-    UnknownTag
-  }
-}
-
-/**
- * Provides a tagged number value based on the value type.
- *
- * @param value: The number value to tag
- *
- * @returns A tagged number value that can be used to extract the value information
- */
-@unsafe
-provide let getNumberTag = (value: Number) => {
-  if (isSimpleNumberValue(value)) {
-    SimpleNumberTag(magic(value): Number)
-  } else {
-    let ref = WasmRef.fromGrain(value)
-    let tag = DataStructures.getNumberTag(ref)
-    if (tag == Tags._GRAIN_INT64_BOXED_NUM_TAG) {
-      Int64Tag(magic(value): Int64)
-    } else if (tag == Tags._GRAIN_FLOAT64_BOXED_NUM_TAG) {
-      Float64Tag(magic(value): Float64)
-    } else if (tag == Tags._GRAIN_RATIONAL_BOXED_NUM_TAG) {
-      RationalTag(magic(value): Rational)
-    } else if (tag == Tags._GRAIN_BIGINT_BOXED_NUM_TAG) {
-      BigIntTag(magic(value): BigInt)
-    } else {
-      UnknownNumberTag
-    }
-  }
-}
-
 // Short tagging
+/**
+ * Checks if the given grain value is a char short value.
+ *
+ * @param ref: The grain value to check
+ *
+ * @returns `true` if the grain value is a char short value, `false` otherwise
+ */
 @unsafe
-let isChar = a => {
-  let ref = WasmRef.fromGrain(a)
+provide let isChar = ref => {
   WasmRef.isRefI31(ref)
     && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
       == Tags._GRAIN_CHAR_SHORTVAL_TAG
 }
+
+/**
+ * Checks if the given grain value is a int8 short value.
+ *
+ * @param ref: The grain value to check
+ *
+ * @returns `true` if the grain value is a int8 short value, `false` otherwise
+ */
 @unsafe
-let isInt8 = a => {
-  let ref = WasmRef.fromGrain(a)
+provide let isInt8 = ref => {
   WasmRef.isRefI31(ref)
     && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
       == Tags._GRAIN_INT8_TAG_MASK
 }
+
+/**
+ * Checks if the given grain value is a int16 short value.
+ *
+ * @param ref: The grain value to check
+ *
+ * @returns `true` if the grain value is a int16 short value, `false` otherwise
+ */
 @unsafe
-let isInt16 = a => {
-  let ref = WasmRef.fromGrain(a)
+provide let isInt16 = ref => {
   WasmRef.isRefI31(ref)
     && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
       == Tags._GRAIN_INT16_TAG_MASK
 }
+
+/**
+ * Checks if the given grain value is a uint8 short value.
+ *
+ * @param ref: The grain value to check
+ *
+ * @returns `true` if the grain value is a uint8 short value, `false` otherwise
+ */
 @unsafe
-let isUInt8 = a => {
-  let ref = WasmRef.fromGrain(a)
+provide let isUInt8 = ref => {
   WasmRef.isRefI31(ref)
     && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
       == Tags._GRAIN_UINT8_TAG_MASK
 }
+
+/**
+ * Checks if the given grain value is a uint16 short value.
+ *
+ * @param ref: The grain value to check
+ *
+ * @returns `true` if the grain value is a uint16 short value, `false` otherwise
+ */
 @unsafe
-let isUInt16 = a => {
-  let ref = WasmRef.fromGrain(a)
+provide let isUInt16 = ref => {
   WasmRef.isRefI31(ref)
     && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_SHORTVAL_TAG_MASK)
       == Tags._GRAIN_UINT16_TAG_MASK
 }
 
 /**
- * Provides a tagged short value based on the value type.
- *
- * @param value: The short value to tag
- *
- * @returns A tagged short value that can be used to extract the value information
- *
- * Note: The `a` is `forall a`, meaning we never want to unify it.
- */
-@unsafe
-provide let getShortTag = (value: ShortValue<a>) => {
-  if (isChar(value)) {
-    CharTag(magic(value): Char)
-  } else if (isInt8(value)) {
-    Int8Tag(magic(value): Int8)
-  } else if (isInt16(value)) {
-    Int16Tag(magic(value): Int16)
-  } else if (isUInt8(value)) {
-    Uint8Tag(magic(value): Uint8)
-  } else if (isUInt16(value)) {
-    Uint16Tag(magic(value): Uint16)
-  } else {
-    UnknownShortTag
-  }
-}
-
-/**
  * Provides the tuples tagged contents.
  *
- * @param value: The tagged tuple value to extract data from
+ * @param ref: A reference to the tuple value to extract data from
  *
- * @returns An array of tagged values representing the tuple contents
+ * @returns An array of values representing the tuple's elements
  */
 @unsafe
-provide let getTupleData = (value: TupleValue<a>) => {
-  let ref = WasmRef.fromGrain(value)
+provide let getTupleData = (ref: WasmRef) => {
   let data = DataStructures.getCompoundValueArrayRef(ref)
   let arity = WasmArrayRef.length(data)
   let arrRef = allocateArray(arity, WasmRef.fromGrain(void))
   let arrData = DataStructures.getCompoundValueArrayRef(arrRef)
   for (let mut i = 0n; i < arity; i += 1n) {
-    WasmArrayRef.setAny(
-      arrData,
-      i,
-      WasmRef.fromGrain(getTag(WasmRef.toGrain(WasmArrayRef.getAny(data, i))))
-    )
+    WasmArrayRef.setAny(arrData, i, WasmArrayRef.getAny(data, i))
   }
-  WasmRef.toGrain(arrRef): Array<StackTag<a>>
-}
-
-/**
- * Provides the array's tagged contents.
- *
- * @param value: The tagged array value to extract data from
- *
- * @returns An array of tagged values representing the array's elements
- */
-@unsafe
-provide let getArrayData = (value: Array<a>) => {
-  let ref = WasmRef.fromGrain(value)
-  let data = DataStructures.getCompoundValueArrayRef(ref)
-  let arity = WasmArrayRef.length(data)
-  let arrRef = allocateArray(arity, WasmRef.fromGrain(void))
-  let arrData = DataStructures.getCompoundValueArrayRef(arrRef)
-  for (let mut i = 0n; i < arity; i += 1n) {
-    WasmArrayRef.setAny(
-      arrData,
-      i,
-      WasmRef.fromGrain(getTag(WasmRef.toGrain(WasmArrayRef.getAny(data, i))))
-    )
-  }
-  WasmRef.toGrain(arrRef): Array<StackTag<a>>
+  WasmRef.toGrain(arrRef): Array<WasmRef>
 }
 
 /**
@@ -572,7 +397,7 @@ module TypeMetaData {
  * @returns An associated array of field names and their corresponding tagged values
  */
 @unsafe
-provide let getRecordData = (record_: RecordValue<a>) => {
+provide let getRecordData = (record_: WasmRef) => {
   let ref = WasmRef.fromGrain(record_)
   let data = DataStructures.getCompoundValueArrayRef(ref)
   let typeHash = untagSimpleNumber(DataStructures.loadRecordTypeHash(ref))
@@ -594,11 +419,11 @@ provide let getRecordData = (record_: RecordValue<a>) => {
       fieldNames[tagSimpleNumber(i)]
     }
     // Determine field value
-    let value = getTag(WasmArrayRef.getAny(data, i))
+    let value = WasmArrayRef.getAny(data, i)
     // Pack data
     WasmArrayRef.setAny(fieldData, i, WasmRef.fromGrain((name, value)))
   }
-  WasmRef.toGrain(fieldRef): Array<(String, StackTag<b>)>
+  WasmRef.toGrain(fieldRef): Array<(String, WasmRef)>
 }
 
 /**
@@ -610,21 +435,20 @@ provide enum VariantType<a> {
   /** A variant with no attached data. */
   EmptyVariant,
   /** A variant with tuple data attached. */
-  TupleVariant(Array<StackTag<a>>),
+  TupleVariant(Array<WasmRef>),
   /** A variant with record data attached. */
-  RecordVariant(Array<(String, StackTag<a>)>),
+  RecordVariant(Array<(String, WasmRef)>),
 }
 
 /**
  * Provides the variant's tagged field data.
  *
- * @param variant: The tagged variant value to extract data from
+ * @param ref: A reference to the variant value to extract data from
  *
  * @returns The name and field data of the variant
  */
 @unsafe
-provide let getVariantData = (variant: ADTValue<a>) => {
-  let ref = WasmRef.fromGrain(variant)
+provide let getVariantData = (ref: WasmRef) => {
   let data = DataStructures.getCompoundValueArrayRef(ref)
   let typeHash = untagSimpleNumber(DataStructures.loadVariantTypeHash(ref))
   let typeTag = untagSimpleNumber(DataStructures.loadVariantTypeId(ref))
@@ -646,7 +470,7 @@ provide let getVariantData = (variant: ADTValue<a>) => {
   let valuesData = DataStructures.getCompoundValueArrayRef(valuesRef)
   for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
     // Determine field value
-    let value = getTag(WasmArrayRef.getAny(data, i))
+    let value = WasmArrayRef.getAny(data, i)
     // Write to data array
     if (fieldNamesLen == 0n) {
       // Tuple Variant
@@ -663,91 +487,22 @@ provide let getVariantData = (variant: ADTValue<a>) => {
   // Pack Data
   return if (fieldNamesLen == 0n) {
     // Tuple Variant
-    (name, TupleVariant(WasmRef.toGrain(valuesRef): Array<StackTag<b>>))
+    (name, TupleVariant(WasmRef.toGrain(valuesRef): Array<WasmRef>))
   } else {
     // Record Variant
-    (
-      name,
-      RecordVariant(WasmRef.toGrain(valuesRef): Array<(String, StackTag<b>)>),
-    )
+    (name, RecordVariant(WasmRef.toGrain(valuesRef): Array<(String, WasmRef)>))
   }
 }
 
 /**
  * Checks if the given ADT value is a List variant.
  *
- * @param value: The ADT value to check.
+ * @param ref: The ADT value to check.
  *
  * @returns `true` if the ADT value is a List variant, `false` otherwise.
  */
 @unsafe
-provide let isListVariant = (value: ADTValue<a>) => {
-  let ref = WasmRef.fromGrain(value)
+provide let isListVariant = (ref: WasmRef) => {
   let typeId = untagSimpleNumber(DataStructures.loadVariantTypeId(ref))
   typeId == _LIST_ID
-}
-
-@unsafe
-provide let getInt32Value = (value: Int32) => {
-  Conv.fromInt32(value)
-}
-
-/**
- * Extracts the unsafe value from a Grain Int64.
- *
- * @param value: The value to extra
- *
- * @returns The unsafe value
- */
-@unsafe
-provide let getInt64Value = (value: Int64) => {
-  Conv.fromInt64(value)
-}
-
-/**
- * Extracts the unsafe value from a Grain Uint32.
- *
- * @param value: The value to extract
- *
- * @returns The unsafe value
- */
-@unsafe
-provide let getUint32Value = (value: Uint32) => {
-  Conv.fromUint32(value)
-}
-
-/**
- * Extracts the unsafe value from a Grain Uint64.
- *
- * @param value: The value to extract
- *
- * @returns The unsafe value
- */
-@unsafe
-provide let getUint64Value = (value: Uint64) => {
-  Conv.fromUint64(value)
-}
-
-/**
- * Extracts the unsafe value from a Grain Float32.
- *
- * @param value: The value to extract
- *
- * @returns The unsafe value
- */
-@unsafe
-provide let getFloat32Value = (value: Float32) => {
-  Conv.fromFloat32(value)
-}
-
-/**
- * Extracts the unsafe value from a Grain Float64.
- *
- * @param value: The value to extract
- *
- * @returns The unsafe value
- */
-@unsafe
-provide let getFloat64Value = (value: Float64) => {
-  Conv.fromFloat64(value)
 }
