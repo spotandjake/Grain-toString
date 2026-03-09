@@ -2,7 +2,6 @@
 module SmallProgram
 
 from "runtime/string" include String
-from "./print.gr" include Print
-use Print.{ print }
-
-print(String.toString("Hello World!"))
+use String.{ toString }
+primitive ignore = "@ignore"
+ignore(toString("Hello World!"))

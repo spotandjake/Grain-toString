@@ -201,7 +201,7 @@ A node that causes the enclosing group to be printed in Breaking mode.
 string: (str: String) => LayoutNode
 ```
 
-A node that prints the char as-is. The `char`
+A node that prints the string as-is. The `string`
 function is Utf8-aware.
 
 Parameters:

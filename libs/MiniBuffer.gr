@@ -21,11 +21,8 @@ abstract record MiniBuffer {
   mut pos: Number,
 }
 @unsafe
-provide let make = size =>
-  {
-    data: WasmRef.toGrain(allocateBytes(untagSimpleNumber(size))): Bytes,
-    pos: 0,
-  }
+provide let make = (size: WasmI32) =>
+  { data: WasmRef.toGrain(allocateBytes(size)): Bytes, pos: 0 }
 
 @unsafe
 let autogrow = (buffer: MiniBuffer, addedSize: WasmI32) => {

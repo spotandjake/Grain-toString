@@ -19,7 +19,7 @@ Functions and constants included in the MiniBuffer module.
 ### MiniBuffer.**make**
 
 ```grain
-make: (size: Number) => MiniBuffer
+make: (size: WasmI32) => MiniBuffer
 ```
 
 ### MiniBuffer.**addString**

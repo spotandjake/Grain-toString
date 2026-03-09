@@ -127,7 +127,6 @@ from "./miniBuffer.gr" include MiniBuffer
 
 primitive (||) = "@or"
 primitive throw = "@throw"
-primitive arrayLength = "@array.length"
 
 exception Impossible(String)
 
@@ -314,7 +313,7 @@ provide module Builder {
    */
   provide let groupBreaker = GroupBreaker
   /**
-   * A node that prints the char as-is. The `char`
+   * A node that prints the string as-is. The `string`
    * function is Utf8-aware.
    *
    * @param str: The string to print
@@ -509,28 +508,26 @@ provide module Builder {
    */
   @unsafe
   provide let concatArrayMap = (sep, lead, trail, func, arr: Array<a>) => {
-    use WasmI32.{ (+), (-), (<), (==) }
-    let arrLen = untagSimpleNumber(arrayLength(arr))
-    if (arrLen == 0n) return empty
+    use WasmI32.{ (+), (<) }
     let arrRef = WasmRef.fromGrain(arr)
     let arrData = DataStructures.getCompoundValueArrayRef(arrRef)
+    let arrLen = WasmArrayRef.length(arrData)
+    if (WasmI32.eqz(arrLen)) return empty
     let first = arr[0]
     let mut acc = lead(first)
-    if (arrLen == 1n) {
-      return acc ++ func(final=true, first) ++ trail(first)
+    let mut prev = first
+    for (let mut i = 1n; i < arrLen; i += 1n) {
+      let curr = WasmRef.toGrain(WasmArrayRef.getAny(arrData, i)): a
+      acc = acc ++ func(final=false, prev) ++ sep(prev, curr)
+      prev = curr
     }
-    for (let mut i = 0n; i < arrLen; i += 1n) {
-      let elem = WasmRef.toGrain(WasmArrayRef.getAny(arrData, i)): a
-      if (i == arrLen - 1n) {
-        acc = acc ++ func(final=true, elem) ++ trail(elem)
-      } else {
-        let next = WasmRef.toGrain(WasmArrayRef.getAny(arrData, i + 1n)): a
-        acc = acc ++ func(final=false, elem) ++ sep(elem, next)
-      }
-    }
-
-    return acc
+    return acc ++ func(final=true, prev) ++ trail(prev)
   }
+
+  // Constant Strings
+  let closingBracket = constantString("]", 1)
+  let doubleQuote = constantString("\"", 1)
+  let singleQuote = constantString("'", 1)
 
   /**
    * A node that represents a space that may be broken
@@ -574,7 +571,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in array brackets
    */
   provide let arrayBrackets = (wrap=doc => group(doc), doc) =>
-    wrap(constantString("[>", 2) ++ doc ++ constantString("]", 1))
+    wrap(constantString("[>", 2) ++ doc ++ closingBracket)
   /**
    * Constructs a node wrapping the given document in list brackets.
    *
@@ -584,7 +581,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in list brackets
    */
   provide let listBrackets = (wrap=doc => group(doc), doc) =>
-    wrap(constantString("[", 1) ++ doc ++ constantString("]", 1))
+    wrap(constantString("[", 1) ++ doc ++ closingBracket)
   /**
    * Constructs a node wrapping the given document in angle brackets.
    *
@@ -602,8 +599,7 @@ provide module Builder {
    *
    * @returns A LayoutNode that wraps the document in double quotes
    */
-  provide let doubleQuotes = doc =>
-    constantString("\"", 1) ++ doc ++ constantString("\"", 1)
+  provide let doubleQuotes = doc => doubleQuote ++ doc ++ doubleQuote
   /**
    * Constructs a node wrapping the given document in single quotes.
    *
@@ -611,8 +607,7 @@ provide module Builder {
    *
    * @returns A LayoutNode that wraps the document in single quotes
    */
-  provide let singleQuotes = doc =>
-    constantString("'", 1) ++ doc ++ constantString("'", 1)
+  provide let singleQuotes = doc => singleQuote ++ doc ++ singleQuote
   /**
    * A node that represents a trailing comma to be added if the
    * current group is broken.
@@ -801,8 +796,9 @@ provide module Engine {
    *
    * @returns The string representation of the document
    */
+  @unsafe
   provide let toString = (eol, lineWidth, doc) => {
-    let b = MiniBuffer.make(2048)
+    let b = MiniBuffer.make(2048n)
     let write = str => MiniBuffer.addString(str, b)
     print(write, eol, lineWidth, doc)
     MiniBuffer.toString(b)

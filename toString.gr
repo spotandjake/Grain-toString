@@ -57,11 +57,11 @@ let _VISITED_BIT = 0x1n
 
 // Computes the escaped length of a usv
 @unsafe
-let computeEscapedUSVLength = (usv: WasmI32, isString: Bool, topLevel: Bool) => {
+let computeEscapedUSVLength = (usv: WasmI32, isString: Bool) => {
   match (usv) {
-    0x08n | 0x0Cn | 0x0An | 0x0Dn | 0x09n | 0x0Bn | 0x5Cn when !topLevel => 2n,
-    0x27n when !isString && !topLevel => 2n,
-    0x22n when isString && !topLevel => 2n,
+    0x08n | 0x0Cn | 0x0An | 0x0Dn | 0x09n | 0x0Bn | 0x5Cn => 2n,
+    0x27n when !isString => 2n,
+    0x22n when isString => 2n,
     _ => usvEncodeLength(usv),
   }
 }
@@ -73,29 +73,24 @@ let writeEscapedUSV = (
   strData: WasmArrayRef.WasmArrayRef,
   index: WasmI32,
   isString: Bool,
-  topLevel: Bool,
 ) => {
   use WasmI32.{ (+), (==) }
   let mut index = index
-  if (!topLevel) {
-    if (computeEscapedUSVLength(usv, isString, topLevel) == 2n) {
-      index += writeUtf8CodePoint(strData, index, 0x5Cn) // \
-    }
-    index += writeUtf8CodePoint(strData, index, match (usv) {
-      0x08n => 0x62n, // \b,
-      0x0Cn => 0x66n, // \f
-      0x0An => 0x6En, // \n
-      0x0Dn => 0x72n, // \r
-      0x09n => 0x74n, // \t
-      0x0Bn => 0x76n, // \v
-      0x5Cn => 0x5Cn, // \\
-      0x27n when !isString => 0x27n, // \'
-      0x22n when isString => 0x22n, // \"
-      _ => usv,
-    })
-  } else {
-    index += writeUtf8CodePoint(strData, index, usv)
+  if (computeEscapedUSVLength(usv, isString) == 2n) {
+    index += writeUtf8CodePoint(strData, index, 0x5Cn) // \
   }
+  index += writeUtf8CodePoint(strData, index, match (usv) {
+    0x08n => 0x62n, // \b,
+    0x0Cn => 0x66n, // \f
+    0x0An => 0x6En, // \n
+    0x0Dn => 0x72n, // \r
+    0x09n => 0x74n, // \t
+    0x0Bn => 0x76n, // \v
+    0x5Cn => 0x5Cn, // \\
+    0x27n when !isString => 0x27n, // \'
+    0x22n when isString => 0x22n, // \"
+    _ => usv,
+  })
   index
 }
 
@@ -145,36 +140,30 @@ module Stringify {
    */
   @unsafe
   provide let string = (val: String, state) => {
-    use WasmI32.{ (+), (-), (<) }
-    let strRef = WasmRef.fromGrain(val)
-    let strSize = DataStructures.getStringSize(strRef)
-    let strData = DataStructures.getStringArrayRef(strRef)
-    // Compute String Length with Escaping
-    let mut escapedLength = 0n
-    for (let mut i = 0n; i < strSize;) {
-      let usv = Utf8.getCodePoint(strData, i)
-      i += Utf8.usvEncodeLength(usv)
-      escapedLength += computeEscapedUSVLength(usv, true, state.topLevel)
-    }
-    // Write String with Escaping
-    let escapedStrRef = allocateString(escapedLength)
-    let escapedStrData = DataStructures.getStringArrayRef(escapedStrRef)
-    let mut escapedIndex = 0n
-    for (let mut i = 0n; i < strSize;) {
-      let usv = Utf8.getCodePoint(strData, i)
-      i += Utf8.usvEncodeLength(usv)
-      escapedIndex = writeEscapedUSV(
-        usv,
-        escapedStrData,
-        escapedIndex,
-        true,
-        state.topLevel
-      )
-    }
-    let content = Doc.Builder.string(WasmRef.toGrain(escapedStrRef): String)
     if (state.topLevel) {
-      content
+      Doc.Builder.string(val)
     } else {
+      use WasmI32.{ (+), (<) }
+      let strRef = WasmRef.fromGrain(val)
+      let strSize = DataStructures.getStringSize(strRef)
+      let strData = DataStructures.getStringArrayRef(strRef)
+      // Compute String Length with Escaping
+      let mut escapedLength = 0n
+      for (let mut i = 0n; i < strSize;) {
+        let usv = Utf8.getCodePoint(strData, i)
+        i += Utf8.usvEncodeLength(usv)
+        escapedLength += computeEscapedUSVLength(usv, true)
+      }
+      // Write String with Escaping
+      let escapedStrRef = allocateString(escapedLength)
+      let escapedStrData = DataStructures.getStringArrayRef(escapedStrRef)
+      let mut escapedIndex = 0n
+      for (let mut i = 0n; i < strSize;) {
+        let usv = Utf8.getCodePoint(strData, i)
+        i += Utf8.usvEncodeLength(usv)
+        escapedIndex = writeEscapedUSV(usv, escapedStrData, escapedIndex, true)
+      }
+      let content = Doc.Builder.string(WasmRef.toGrain(escapedStrRef): String)
       Doc.Builder.doubleQuotes(content)
     }
   }
@@ -380,17 +369,21 @@ module Stringify {
    */
   @unsafe
   provide let char = (val: Char, state) => {
-    use WasmI32.{ (+) }
     let usv = untagChar(val)
-    let strLength = computeEscapedUSVLength(usv, false, state.topLevel)
-    let strRef = allocateString(strLength)
-    let strData = DataStructures.getStringArrayRef(strRef)
-    writeEscapedUSV(usv, strData, 0n, false, state.topLevel)
-    let content = Doc.Builder.string(WasmRef.toGrain(strRef): String)
     if (state.topLevel) {
-      content
+      let strLength = usvEncodeLength(usv)
+      let strRef = allocateString(strLength)
+      let strData = DataStructures.getStringArrayRef(strRef)
+      writeUtf8CodePoint(strData, 0n, usv)
+      Doc.Builder.string(WasmRef.toGrain(strRef): String)
     } else {
-      Doc.Builder.singleQuotes(content)
+      let strLength = computeEscapedUSVLength(usv, false)
+      let strRef = allocateString(strLength)
+      let strData = DataStructures.getStringArrayRef(strRef)
+      writeEscapedUSV(usv, strData, 0n, false)
+      Doc.Builder.singleQuotes(
+        Doc.Builder.string(WasmRef.toGrain(strRef): String)
+      )
     }
   }
 
@@ -412,16 +405,16 @@ module Stringify {
       let tag = DataStructures.getNumberTag(ref)
       use WasmI32.{ (==) }
       match (tag) {
-        t when t == Tags._GRAIN_INT64_BOXED_NUM_TAG => {
+        _ when tag == Tags._GRAIN_INT64_BOXED_NUM_TAG => {
           int64(magic(val): Int64)
         },
-        t when t == Tags._GRAIN_FLOAT64_BOXED_NUM_TAG => {
+        _ when tag == Tags._GRAIN_FLOAT64_BOXED_NUM_TAG => {
           float64(magic(val): Float64)
         },
-        t when t == Tags._GRAIN_RATIONAL_BOXED_NUM_TAG => {
+        _ when tag == Tags._GRAIN_RATIONAL_BOXED_NUM_TAG => {
           rational(magic(val): Rational)
         },
-        t when t == Tags._GRAIN_BIGINT_BOXED_NUM_TAG => {
+        _ when tag == Tags._GRAIN_BIGINT_BOXED_NUM_TAG => {
           bigInt(magic(val): BigInt)
         },
         _ => Doc.Builder.constantString("<unknown number>", 16),
@@ -433,11 +426,11 @@ module Stringify {
   let shortValueToString = (ref: WasmRef, state) => {
     // Get The Short Tag
     match (ref) {
-      r when GrainValue.isChar(r) => char(WasmRef.toGrain(r): Char, state),
-      r when GrainValue.isInt8(r) => int8(WasmRef.toGrain(r): Int8),
-      r when GrainValue.isInt16(r) => int16(WasmRef.toGrain(r): Int16),
-      r when GrainValue.isUInt8(r) => uint8(WasmRef.toGrain(r): Uint8),
-      r when GrainValue.isUInt16(r) => uint16(WasmRef.toGrain(r): Uint16),
+      _ when GrainValue.isChar(ref) => char(WasmRef.toGrain(ref): Char, state),
+      _ when GrainValue.isInt8(ref) => int8(WasmRef.toGrain(ref): Int8),
+      _ when GrainValue.isInt16(ref) => int16(WasmRef.toGrain(ref): Int16),
+      _ when GrainValue.isUInt8(ref) => uint8(WasmRef.toGrain(ref): Uint8),
+      _ when GrainValue.isUInt16(ref) => uint16(WasmRef.toGrain(ref): Uint16),
       _ => Doc.Builder.constantString("<unknown short value>", 21),
     }
   }
@@ -462,11 +455,11 @@ module Stringify {
     // Get The Heap Tag
     let tag = DataStructures.loadValueTag(ref)
     let content = match (tag) {
-      t when (
-        t == Tags._GRAIN_TUPLE_HEAP_TAG
-        || t == Tags._GRAIN_ARRAY_HEAP_TAG
-        || t == Tags._GRAIN_RECORD_HEAP_TAG
-        || t == Tags._GRAIN_ADT_HEAP_TAG
+      _ when (
+        tag == Tags._GRAIN_TUPLE_HEAP_TAG
+        || tag == Tags._GRAIN_ARRAY_HEAP_TAG
+        || tag == Tags._GRAIN_RECORD_HEAP_TAG
+        || tag == Tags._GRAIN_ADT_HEAP_TAG
       )
         && DataStructures.loadCycleMarker(ref) != 0n => {
         let cycleMap = unbox(state.cycleMap)
@@ -486,26 +479,26 @@ module Stringify {
           ++ Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
           ++ Doc.Builder.constantString(">>", 2)
       },
-      t when t == Tags._GRAIN_TUPLE_HEAP_TAG => tuple(ref, state),
-      t when t == Tags._GRAIN_ARRAY_HEAP_TAG =>
+      _ when tag == Tags._GRAIN_TUPLE_HEAP_TAG => tuple(ref, state),
+      _ when tag == Tags._GRAIN_ARRAY_HEAP_TAG =>
         array(WasmRef.toGrain(ref): Array<WasmRef>, state),
-      t when t == Tags._GRAIN_RECORD_HEAP_TAG => _record(ref, state),
-      t when t == Tags._GRAIN_ADT_HEAP_TAG => adt(ref, state),
-      t when t == Tags._GRAIN_LAMBDA_HEAP_TAG =>
+      _ when tag == Tags._GRAIN_RECORD_HEAP_TAG => _record(ref, state),
+      _ when tag == Tags._GRAIN_ADT_HEAP_TAG => adt(ref, state),
+      _ when tag == Tags._GRAIN_LAMBDA_HEAP_TAG =>
         Doc.Builder.constantString("<lambda>", 8),
-      t when t == Tags._GRAIN_STRING_HEAP_TAG =>
+      _ when tag == Tags._GRAIN_STRING_HEAP_TAG =>
         string(WasmRef.toGrain(ref): String, state),
-      t when t == Tags._GRAIN_BYTES_HEAP_TAG =>
+      _ when tag == Tags._GRAIN_BYTES_HEAP_TAG =>
         bytes(WasmRef.toGrain(ref): Bytes),
-      t when t == Tags._GRAIN_BOXED_NUM_HEAP_TAG =>
+      _ when tag == Tags._GRAIN_BOXED_NUM_HEAP_TAG =>
         number(WasmRef.toGrain(ref): Number),
-      t when t == Tags._GRAIN_INT32_HEAP_TAG =>
+      _ when tag == Tags._GRAIN_INT32_HEAP_TAG =>
         int32(WasmRef.toGrain(ref): Int32),
-      t when t == Tags._GRAIN_FLOAT32_HEAP_TAG =>
+      _ when tag == Tags._GRAIN_FLOAT32_HEAP_TAG =>
         float32(WasmRef.toGrain(ref): Float32),
-      t when t == Tags._GRAIN_UINT32_HEAP_TAG =>
+      _ when tag == Tags._GRAIN_UINT32_HEAP_TAG =>
         uint32(WasmRef.toGrain(ref): Uint32),
-      t when t == Tags._GRAIN_UINT64_HEAP_TAG =>
+      _ when tag == Tags._GRAIN_UINT64_HEAP_TAG =>
         uint64(WasmRef.toGrain(ref): Uint64),
       _ => Doc.Builder.constantString("<unknown heap value>", 20),
     }
