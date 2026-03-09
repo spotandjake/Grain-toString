@@ -29,6 +29,12 @@ from "runtime/numberUtils" include NumberUtils
 from "runtime/dataStructures" include DataStructures
 use DataStructures.{
   allocateString,
+  getStringSize,
+  getStringArrayRef,
+  getBytesSize,
+  getBytesArrayRef,
+  allocateArray,
+  getCompoundValueArrayRef,
   // Tagging
   tagSimpleNumber,
   untagSimpleNumber,
@@ -145,8 +151,8 @@ module Stringify {
     } else {
       use WasmI32.{ (+), (<) }
       let strRef = WasmRef.fromGrain(val)
-      let strSize = DataStructures.getStringSize(strRef)
-      let strData = DataStructures.getStringArrayRef(strRef)
+      let strSize = getStringSize(strRef)
+      let strData = getStringArrayRef(strRef)
       // Compute String Length with Escaping
       let mut escapedLength = 0n
       for (let mut i = 0n; i < strSize;) {
@@ -156,7 +162,7 @@ module Stringify {
       }
       // Write String with Escaping
       let escapedStrRef = allocateString(escapedLength)
-      let escapedStrData = DataStructures.getStringArrayRef(escapedStrRef)
+      let escapedStrData = getStringArrayRef(escapedStrRef)
       let mut escapedIndex = 0n
       for (let mut i = 0n; i < strSize;) {
         let usv = Utf8.getCodePoint(strData, i)
@@ -179,14 +185,14 @@ module Stringify {
     use Doc.Builder.{ (++) }
     use WasmI32.{ (+), (-), (*), (<), (>) }
     let ref = WasmRef.fromGrain(val)
-    let data = DataStructures.getBytesArrayRef(ref)
-    let size = DataStructures.getBytesSize(ref)
+    let data = getBytesArrayRef(ref)
+    let size = getBytesSize(ref)
     let size = if (size > 32n) 32n else size // Limit to 32 bytes for display
 
     let hex = NumberUtils.get_HEX_DIGITS()
     let strLen = size * 3n - 1n // 2 hex digits + 1 space per byte - trailing space
     let strRef = allocateString(strLen)
-    let strData = DataStructures.getStringArrayRef(strRef)
+    let strData = getStringArrayRef(strRef)
     WasmArrayRef.fillI8(strData, 0n, 0x20n, strLen) // Fill with spaces
     for (let mut i = 0n; i < size; i += 1n) {
       use WasmI32.{ (>>>) }
@@ -373,13 +379,13 @@ module Stringify {
     if (state.topLevel) {
       let strLength = usvEncodeLength(usv)
       let strRef = allocateString(strLength)
-      let strData = DataStructures.getStringArrayRef(strRef)
+      let strData = getStringArrayRef(strRef)
       writeUtf8CodePoint(strData, 0n, usv)
       Doc.Builder.string(WasmRef.toGrain(strRef): String)
     } else {
       let strLength = computeEscapedUSVLength(usv, false)
       let strRef = allocateString(strLength)
-      let strData = DataStructures.getStringArrayRef(strRef)
+      let strData = getStringArrayRef(strRef)
       writeEscapedUSV(usv, strData, 0n, false)
       Doc.Builder.singleQuotes(
         Doc.Builder.string(WasmRef.toGrain(strRef): String)
@@ -621,17 +627,44 @@ module Stringify {
    */
   and adt = (ref: WasmRef, state) => {
     use Doc.Builder.{ (++) }
+    use WasmI32.{ (-), (>=) }
     DataStructures.storeCycleMarker(ref, _VISITED_BIT)
     let content = if (GrainValue.isListVariant(ref)) {
       list(WasmRef.toGrain(ref), { ...state, topLevel: false })
     } else {
-      let (name, variantData) = GrainValue.getVariantData(ref)
-      Doc.Builder.string(name) ++ match (variantData) {
-        GrainValue.TupleVariant(vals) =>
-          tupleHelp(vals, true, { ...state, topLevel: false }),
-        GrainValue.RecordVariant(vals) =>
-          _recordHelp(vals, { ...state, topLevel: false }),
-        EmptyVariant => Doc.Builder.empty,
+      let (name, fields) = GrainValue.TypeMetaData.getVariantMetaData(ref)
+      let fields = getCompoundValueArrayRef(WasmRef.fromGrain(fields))
+      let data = getCompoundValueArrayRef(ref)
+      let arity = WasmArrayRef.length(data)
+      let valuesRef = allocateArray(arity, WasmRef.fromGrain(void))
+      let valuesData = getCompoundValueArrayRef(valuesRef)
+      let namePortion = Doc.Builder.string(name)
+      // Get Variant Data
+      if (WasmI32.eqz(arity)) {
+        namePortion
+      } else if (WasmI32.eqz(WasmArrayRef.length(fields))) {
+        WasmArrayRef.copyAny(valuesData, 0n, data, 0n, arity)
+        namePortion
+          ++ tupleHelp(
+            WasmRef.toGrain(valuesRef): Array<WasmRef>,
+            true,
+            { ...state, topLevel: false }
+          )
+      } else {
+        for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
+          WasmArrayRef.setAny(
+            valuesData,
+            i,
+            WasmRef.fromGrain(
+              (WasmArrayRef.getAny(fields, i), WasmArrayRef.getAny(data, i))
+            )
+          )
+        }
+        namePortion
+          ++ _recordHelp(
+            WasmRef.toGrain(valuesRef): Array<(String, WasmRef)>,
+            { ...state, topLevel: false }
+          )
       }
     }
     DataStructures.storeCycleMarker(ref, 0n)

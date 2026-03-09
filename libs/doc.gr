@@ -115,6 +115,7 @@ use DataStructures.{
   allocateString,
   getStringSize,
   getStringArrayRef,
+  getCompoundValueArrayRef,
   tagSimpleNumber,
   untagSimpleNumber,
 }
@@ -295,9 +296,11 @@ let hasGroupBreaker = doc => {
   }
 }
 
-let widthValue = width => {
-  let WithBreak(w) | WithoutBreak(w) = width
-  w
+@unsafe
+let widthValue = (width: Width) => {
+  let ref = WasmRef.fromGrain(width)
+  let data = getCompoundValueArrayRef(ref)
+  WasmRef.toGrain(WasmArrayRef.getAny(data, 0n)): Number
 }
 
 /**
@@ -464,13 +467,13 @@ provide module Builder {
       [ultimate] =>
         // one element list
         acc ++ func(final=true, ultimate) ++ trail(ultimate),
-      [elem, next, ...rest] =>
+      [elem, ...[next, ..._] as rest] =>
         concatMapHelp(
           sep,
           trail,
           func,
           acc ++ func(final=false, elem) ++ sep(elem, next),
-          [next, ...rest]
+          rest
         ),
     }
   }
@@ -513,7 +516,7 @@ provide module Builder {
     let arrData = DataStructures.getCompoundValueArrayRef(arrRef)
     let arrLen = WasmArrayRef.length(arrData)
     if (WasmI32.eqz(arrLen)) return empty
-    let first = arr[0]
+    let first = WasmRef.toGrain(WasmArrayRef.getAny(arrData, 0n)): a
     let mut acc = lead(first)
     let mut prev = first
     for (let mut i = 1n; i < arrLen; i += 1n) {

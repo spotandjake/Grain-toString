@@ -14,7 +14,7 @@ tasks:
       - bash sizeInspect.sh
   perf:
     cmds:
-      - grain compile perf.gr --wat
+      - grain compile perf.gr
       - wasmtime --wasm gc --wasm reference-types --wasm function-references --profile=guest perf.wasm
   format:
     cmds:

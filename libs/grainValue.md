@@ -9,44 +9,6 @@ Note:
   The grain team offers no guarantees on breaking changes or
   end user support.
 
-## Types
-
-Type declarations included in the GrainValue module.
-
-### GrainValue.**VariantType**
-
-```grain
-enum VariantType<a> {
-  EmptyVariant,
-  TupleVariant(Array<WasmRef>),
-  RecordVariant(Array<(String, WasmRef)>),
-}
-```
-
-Represents the variant's field data types.
-
-Note: The `a` is `forall a`, meaning we never want to unify it.
-
-Variants:
-
-```grain
-EmptyVariant
-```
-
-A variant with no attached data.
-
-```grain
-TupleVariant(Array<WasmRef>)
-```
-
-A variant with tuple data attached.
-
-```grain
-RecordVariant(Array<(String, WasmRef)>)
-```
-
-A variant with record data attached.
-
 ## Values
 
 Functions and constants included in the GrainValue module.
@@ -237,7 +199,7 @@ Returns:
 getTupleData: (ref: WasmRef) => Array<WasmRef>
 ```
 
-Provides the tuples tagged contents.
+Provides the tuples contents.
 
 Parameters:
 
@@ -247,49 +209,31 @@ Parameters:
 
 Returns:
 
-| type             | description                                          |
-| ---------------- | ---------------------------------------------------- |
-| `Array<WasmRef>` | An array of values representing the tuple's elements |
+| type             | description                                              |
+| ---------------- | -------------------------------------------------------- |
+| `Array<WasmRef>` | An array of references representing the tuple's elements |
 
 ### GrainValue.**getRecordData**
 
 ```grain
-getRecordData: (record_: WasmRef) => Array<(String, WasmRef)>
+getRecordData: (ref: WasmRef) => Array<(String, WasmRef)>
 ```
 
-Provides the record's tagged field data.
+Provides the records field data along with field names if available.
+
+If the names are not available, the field names will be returned as "<unknown field>".
 
 Parameters:
 
-| param     | type      | description                                  |
-| --------- | --------- | -------------------------------------------- |
-| `record_` | `WasmRef` | The tagged record value to extract data from |
+| param | type      | description                                                  |
+| ----- | --------- | ------------------------------------------------------------ |
+| `ref` | `WasmRef` | The reference to the record value to extract field data from |
 
 Returns:
 
-| type                       | description                                                              |
-| -------------------------- | ------------------------------------------------------------------------ |
-| `Array<(String, WasmRef)>` | An associated array of field names and their corresponding tagged values |
-
-### GrainValue.**getVariantData**
-
-```grain
-getVariantData: (ref: WasmRef) => (String, VariantType<a>)
-```
-
-Provides the variant's tagged field data.
-
-Parameters:
-
-| param | type      | description                                           |
-| ----- | --------- | ----------------------------------------------------- |
-| `ref` | `WasmRef` | A reference to the variant value to extract data from |
-
-Returns:
-
-| type                       | description                            |
-| -------------------------- | -------------------------------------- |
-| `(String, VariantType<a>)` | The name and field data of the variant |
+| type                       | description                                                       |
+| -------------------------- | ----------------------------------------------------------------- |
+| `Array<(String, WasmRef)>` | An associated array of field names and their corresponding values |
 
 ### GrainValue.**isListVariant**
 
@@ -310,4 +254,52 @@ Returns:
 | type   | description                                                   |
 | ------ | ------------------------------------------------------------- |
 | `Bool` | `true` if the ADT value is a List variant, `false` otherwise. |
+
+## GrainValue.TypeMetaData
+
+Provides utilities for accessing type metadata.
+
+### Values
+
+Functions and constants included in the GrainValue.TypeMetaData module.
+
+#### GrainValue.TypeMetaData.**getRecordMetaData**
+
+```grain
+getRecordMetaData: (ref: WasmRef) => Array<String>
+```
+
+Provides the metadata for a record type.
+
+Parameters:
+
+| param | type      | description                                                |
+| ----- | --------- | ---------------------------------------------------------- |
+| `ref` | `WasmRef` | The reference to the record value to extract metadata from |
+
+Returns:
+
+| type            | description                                                            |
+| --------------- | ---------------------------------------------------------------------- |
+| `Array<String>` | The names of the fields in the record, or an empty array if none found |
+
+#### GrainValue.TypeMetaData.**getVariantMetaData**
+
+```grain
+getVariantMetaData: (ref: WasmRef) => (String, Array<String>)
+```
+
+Provides the metadata for a variant type.
+
+Parameters:
+
+| param | type      | description                                                 |
+| ----- | --------- | ----------------------------------------------------------- |
+| `ref` | `WasmRef` | The reference to the variant value to extract metadata from |
+
+Returns:
+
+| type                      | description                        |
+| ------------------------- | ---------------------------------- |
+| `(String, Array<String>)` | The name and fields of the variant |
 
