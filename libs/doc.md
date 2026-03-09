@@ -64,7 +64,7 @@ title: Doc
           group(indent(2, string("foo") ++ break ++ string("bar")))
         ))
       if the break hint is broken by the engine, `bar`'s indentation level will
-      only be two spaces, as the outer group could never be broken be broken by
+      only be two spaces, as the outer group could never be broken by
       the engine.
     • Group
       ~kind=Auto
