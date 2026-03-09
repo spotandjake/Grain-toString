@@ -124,6 +124,8 @@ module Stringify {
    * State used during stringification to track cycles and context.
    */
   abstract record StringifyState {
+    /** Maximum depth to prevent infinite recursion in cyclic structures */
+    maxDepth: Number,
     /** Indicates if we are currently stringifying the top-level value. */
     topLevel: Bool,
     /** A map of heap values to their cycle numbers. */
@@ -134,7 +136,20 @@ module Stringify {
    *
    * @returns An empty stringification state
    */
-  provide let emptyState = () => { topLevel: true, cycleMap: box([]) }
+  provide let makeState = maxDepth =>
+    { maxDepth, topLevel: true, cycleMap: box([]) }
+
+  /**
+   * Generates the next stringification state for nested values, decrementing the max depth.
+   */
+  provide let nextState = state => {
+    use WasmI32.{ (-) }
+    {
+      ...state,
+      maxDepth: tagSimpleNumber(untagSimpleNumber(state.maxDepth) - 1n),
+      topLevel: false,
+    }
+  }
 
   // Heap Values
   /**
@@ -458,10 +473,12 @@ module Stringify {
   @unsafe
   let rec heapValueToString = (ref: WasmRef, state) => {
     use Doc.Builder.{ (++) }
-    use WasmI32.{ (==), (!=) }
+    use WasmI32.{ (==), (!=), (<=) }
     // Get The Heap Tag
     let tag = DataStructures.loadValueTag(ref)
-    let content = if (
+    let content = if (untagSimpleNumber(state.maxDepth) <= 0n) {
+      Doc.Builder.constantString("<max depth reached>", 19)
+    } else if (
       (
         tag == Tags._GRAIN_TUPLE_HEAP_TAG
         || tag == Tags._GRAIN_ARRAY_HEAP_TAG
@@ -528,7 +545,7 @@ module Stringify {
   }
   and iterableItemHelp = (val: a, final: Bool, state) => {
     use Doc.Builder.{ (++) }
-    let val = value(val, { ...state, topLevel: false })
+    let val = value(val, state)
     if (final) {
       Doc.Builder.group(val) ++ Doc.Builder.trailingComma
     } else {
@@ -537,6 +554,7 @@ module Stringify {
   }
   and tupleHelp = (items: Array<WasmRef>, isVariant, state) => {
     use Doc.Builder.{ (++) }
+    let state = nextState(state)
     let content = Doc.Builder.parens(
       Doc.Builder.indent(
         Doc.Builder.concatArrayMap(
@@ -580,6 +598,7 @@ module Stringify {
    */
   and array = (val: Array<a>, state) => {
     use Doc.Builder.{ (++) }
+    let state = nextState(state)
     let ref = WasmRef.fromGrain(val)
     DataStructures.storeCycleMarker(ref, _VISITED_BIT)
     let content = Doc.Builder.arrayBrackets(
@@ -608,6 +627,7 @@ module Stringify {
    */
   and list = (val: List<a>, state) => {
     use Doc.Builder.{ (++) }
+    let state = nextState(state)
     Doc.Builder.listBrackets(
       Doc.Builder.indent(
         Doc.Builder.concatMap(
@@ -635,7 +655,7 @@ module Stringify {
     use WasmI32.{ (-), (>=) }
     DataStructures.storeCycleMarker(ref, _VISITED_BIT)
     let content = if (GrainValue.isListVariant(ref)) {
-      list(WasmRef.toGrain(ref), { ...state, topLevel: false })
+      list(WasmRef.toGrain(ref), state)
     } else {
       let (name, fields) = GrainValue.TypeMetaData.getVariantMetaData(ref)
       let fields = getCompoundValueArrayRef(WasmRef.fromGrain(fields))
@@ -650,11 +670,7 @@ module Stringify {
       } else if (WasmI32.eqz(WasmArrayRef.length(fields))) {
         WasmArrayRef.copyAny(valuesData, 0n, data, 0n, arity)
         namePortion
-          ++ tupleHelp(
-            WasmRef.toGrain(valuesRef): Array<WasmRef>,
-            true,
-            { ...state, topLevel: false }
-          )
+          ++ tupleHelp(WasmRef.toGrain(valuesRef): Array<WasmRef>, true, state)
       } else {
         for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
           WasmArrayRef.setAny(
@@ -668,7 +684,7 @@ module Stringify {
         namePortion
           ++ _recordHelp(
             WasmRef.toGrain(valuesRef): Array<(String, WasmRef)>,
-            { ...state, topLevel: false }
+            state
           )
       }
     }
@@ -677,6 +693,7 @@ module Stringify {
   }
   and _recordHelp = (entries: Array<(String, WasmRef)>, state) => {
     use Doc.Builder.{ (++) }
+    let state = nextState(state)
     Doc.Builder.braces(
       Doc.Builder.indent(
         Doc.Builder.concatArrayMap(
@@ -684,7 +701,7 @@ module Stringify {
           sep=(prev, next) => Doc.Builder.breakableSpace,
           trail=last => Doc.Builder.space,
           func=(final, (name, ref)) => {
-            let val = value(WasmRef.toGrain(ref), { ...state, topLevel: false })
+            let val = value(WasmRef.toGrain(ref), state)
             let entry = Doc.Builder.group(
               Doc.Builder.string(name)
                 ++ Doc.Builder.constantString(":", 1)
@@ -756,6 +773,6 @@ module Stringify {
 provide let toString = (val: a) => {
   // Note: This is a bit of hack to get around grain's lack of forall types
   let val = magic(val): b
-  let ast = Stringify.value(val, Stringify.emptyState())
+  let ast = Stringify.value(val, Stringify.makeState(32))
   Doc.Engine.toString(LF, 80, ast)
 }

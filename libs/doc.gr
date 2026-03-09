@@ -463,7 +463,6 @@ provide module Builder {
 
   let rec concatMapHelp = (sep, trail, func, acc, lst) => {
     match (lst) {
-      [] => throw Impossible("empty list in concatMap"),
       [ultimate] =>
         // one element list
         acc ++ func(final=true, ultimate) ++ trail(ultimate),
@@ -475,6 +474,7 @@ provide module Builder {
           acc ++ func(final=false, elem) ++ sep(elem, next),
           rest
         ),
+      [] => throw Impossible("empty list in concatMap"),
     }
   }
 

@@ -354,6 +354,20 @@ let cycle5A = [> None]
 let cycle5B = Rec5(cycle5A)
 cycle5A[0] = Some(cycle5B)
 assert toString(cycle5A) == "<1> [>Some(Rec5(<cycle to <1>>))]"
+// Max Depth
+record rec Nested {
+  next: Option<Nested>,
+}
+let rec constructNested = (depth, acc: Nested) => {
+  if (depth <= 0) {
+    acc
+  } else {
+    constructNested(depth - 1, { next: Some(acc), })
+  }
+}
+let nested = constructNested(33, { next: None, })
+assert toString(nested)
+  == "{ \n  next: Some(\n    { \n      next: Some(\n        { \n          next: Some(\n            { \n              next: Some(\n                { \n                  next: Some(\n                    { \n                      next: Some(\n                        { \n                          next: Some(\n                            { \n                              next: Some(\n                                { \n                                  next: Some(\n                                    { \n                                      next: Some(\n                                        { \n                                          next: Some(\n                                            { \n                                              next: Some(\n                                                { \n                                                  next: Some(\n                                                    { \n                                                      next: Some(\n                                                        { \n                                                          next: Some(\n                                                            { \n                                                              next: Some(\n                                                                <max depth reached>,\n                                                              ), \n                                                            },\n                                                          ), \n                                                        },\n                                                      ), \n                                                    },\n                                                  ), \n                                                },\n                                              ), \n                                            },\n                                          ), \n                                        },\n                                      ), \n                                    },\n                                  ), \n                                },\n                              ), \n                            },\n                          ), \n                        },\n                      ), \n                    },\n                  ), \n                },\n              ), \n            },\n          ), \n        },\n      ), \n    },\n  ), \n}"
 
 // Builtins
 module Builtins {

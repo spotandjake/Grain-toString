@@ -46,8 +46,6 @@ One major difference between this library and the current `toString` implementat
 + Allow for custom printing settings
   + Configuring cycle depth
     + This setting would allow us to specify how many times we would like to print a cyclic data structure before we start printing the cycle marker.
-  + Configuring max depth
-    + This setting would allow us to specify how deep we want to print nested data structures before we start printing a `<value>` marker, this is useful for preventing printing huge nested data structures that could bloat the output and make it hard to read.
   + indentation settings.
     + This setting would allow us to specify how many spaces should be used for indentation when printing nested data structures, this is useful for allowing users to customize the look of their printed data structures and make them more readable for their specific use case.
   + compact mode.
