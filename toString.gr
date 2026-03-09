@@ -183,7 +183,7 @@ module Stringify {
   @unsafe
   provide let bytes = (val: Bytes) => {
     use Doc.Builder.{ (++) }
-    use WasmI32.{ (+), (-), (*), (<), (>) }
+    use WasmI32.{ (+), (-), (*), (<), (>), (!=) }
     let ref = WasmRef.fromGrain(val)
     let data = getBytesArrayRef(ref)
     let size = getBytesSize(ref)
@@ -193,14 +193,14 @@ module Stringify {
     let strLen = size * 3n - 1n // 2 hex digits + 1 space per byte - trailing space
     let strRef = allocateString(strLen)
     let strData = getStringArrayRef(strRef)
-    WasmArrayRef.fillI8(strData, 0n, 0x20n, strLen) // Fill with spaces
+    WasmArrayRef.fillI8(strData, 0n, 0x20n, strLen) // Space before each byte except the first
     for (let mut i = 0n; i < size; i += 1n) {
       use WasmI32.{ (>>>) }
-      let j = i * 3n
       let n = WasmArrayRef.getI8U(data, i) * 2n
       let hex = WasmI32.load16U(hex, n)
-      WasmArrayRef.setI8(strData, j, hex)
-      WasmArrayRef.setI8(strData, j + 1n, hex >>> 8n)
+      let strIndex = i * 3n
+      WasmArrayRef.setI8(strData, strIndex, hex)
+      WasmArrayRef.setI8(strData, strIndex + 1n, hex >>> 8n)
     }
     let content = Doc.Builder.string(WasmRef.toGrain(strRef): String)
     let content = if (size < 32n)
@@ -410,20 +410,16 @@ module Stringify {
       let ref = WasmRef.fromGrain(val)
       let tag = DataStructures.getNumberTag(ref)
       use WasmI32.{ (==) }
-      match (tag) {
-        _ when tag == Tags._GRAIN_INT64_BOXED_NUM_TAG => {
-          int64(magic(val): Int64)
-        },
-        _ when tag == Tags._GRAIN_FLOAT64_BOXED_NUM_TAG => {
-          float64(magic(val): Float64)
-        },
-        _ when tag == Tags._GRAIN_RATIONAL_BOXED_NUM_TAG => {
-          rational(magic(val): Rational)
-        },
-        _ when tag == Tags._GRAIN_BIGINT_BOXED_NUM_TAG => {
-          bigInt(magic(val): BigInt)
-        },
-        _ => Doc.Builder.constantString("<unknown number>", 16),
+      if (tag == Tags._GRAIN_INT64_BOXED_NUM_TAG) {
+        int64(magic(val): Int64)
+      } else if (tag == Tags._GRAIN_FLOAT64_BOXED_NUM_TAG) {
+        float64(magic(val): Float64)
+      } else if (tag == Tags._GRAIN_RATIONAL_BOXED_NUM_TAG) {
+        rational(magic(val): Rational)
+      } else if (tag == Tags._GRAIN_BIGINT_BOXED_NUM_TAG) {
+        bigInt(magic(val): BigInt)
+      } else {
+        Doc.Builder.constantString("<unknown number>", 16)
       }
     }
   }
@@ -431,13 +427,18 @@ module Stringify {
   // Polymorphic conversions
   let shortValueToString = (ref: WasmRef, state) => {
     // Get The Short Tag
-    match (ref) {
-      _ when GrainValue.isChar(ref) => char(WasmRef.toGrain(ref): Char, state),
-      _ when GrainValue.isInt8(ref) => int8(WasmRef.toGrain(ref): Int8),
-      _ when GrainValue.isInt16(ref) => int16(WasmRef.toGrain(ref): Int16),
-      _ when GrainValue.isUInt8(ref) => uint8(WasmRef.toGrain(ref): Uint8),
-      _ when GrainValue.isUInt16(ref) => uint16(WasmRef.toGrain(ref): Uint16),
-      _ => Doc.Builder.constantString("<unknown short value>", 21),
+    if (GrainValue.isChar(ref)) {
+      char(WasmRef.toGrain(ref): Char, state)
+    } else if (GrainValue.isInt8(ref)) {
+      int8(WasmRef.toGrain(ref): Int8)
+    } else if (GrainValue.isInt16(ref)) {
+      int16(WasmRef.toGrain(ref): Int16)
+    } else if (GrainValue.isUInt8(ref)) {
+      uint8(WasmRef.toGrain(ref): Uint8)
+    } else if (GrainValue.isUInt16(ref)) {
+      uint16(WasmRef.toGrain(ref): Uint16)
+    } else {
+      Doc.Builder.constantString("<unknown short value>", 21)
     }
   }
 
@@ -460,53 +461,57 @@ module Stringify {
     use WasmI32.{ (==), (!=) }
     // Get The Heap Tag
     let tag = DataStructures.loadValueTag(ref)
-    let content = match (tag) {
-      _ when (
+    let content = if (
+      (
         tag == Tags._GRAIN_TUPLE_HEAP_TAG
         || tag == Tags._GRAIN_ARRAY_HEAP_TAG
         || tag == Tags._GRAIN_RECORD_HEAP_TAG
         || tag == Tags._GRAIN_ADT_HEAP_TAG
       )
-        && DataStructures.loadCycleMarker(ref) != 0n => {
-        let cycleMap = unbox(state.cycleMap)
-        let cycleIndex = match (getCycleNumber(ref, cycleMap)) {
-          -1n => {
-            use WasmI32.{ (+) }
-            let index = match (cycleMap) {
-              [] => 1n,
-              [(_, n), ..._] => untagSimpleNumber(n) + 1n,
-            }
-            state.cycleMap := [(ref, tagSimpleNumber(index)), ...cycleMap]
-            index
-          },
-          n => n,
-        }
-        return Doc.Builder.constantString("<cycle to <", 11)
-          ++ Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
-          ++ Doc.Builder.constantString(">>", 2)
-      },
-      _ when tag == Tags._GRAIN_TUPLE_HEAP_TAG => tuple(ref, state),
-      _ when tag == Tags._GRAIN_ARRAY_HEAP_TAG =>
-        array(WasmRef.toGrain(ref): Array<WasmRef>, state),
-      _ when tag == Tags._GRAIN_RECORD_HEAP_TAG => _record(ref, state),
-      _ when tag == Tags._GRAIN_ADT_HEAP_TAG => adt(ref, state),
-      _ when tag == Tags._GRAIN_LAMBDA_HEAP_TAG =>
-        Doc.Builder.constantString("<lambda>", 8),
-      _ when tag == Tags._GRAIN_STRING_HEAP_TAG =>
-        string(WasmRef.toGrain(ref): String, state),
-      _ when tag == Tags._GRAIN_BYTES_HEAP_TAG =>
-        bytes(WasmRef.toGrain(ref): Bytes),
-      _ when tag == Tags._GRAIN_BOXED_NUM_HEAP_TAG =>
-        number(WasmRef.toGrain(ref): Number),
-      _ when tag == Tags._GRAIN_INT32_HEAP_TAG =>
-        int32(WasmRef.toGrain(ref): Int32),
-      _ when tag == Tags._GRAIN_FLOAT32_HEAP_TAG =>
-        float32(WasmRef.toGrain(ref): Float32),
-      _ when tag == Tags._GRAIN_UINT32_HEAP_TAG =>
-        uint32(WasmRef.toGrain(ref): Uint32),
-      _ when tag == Tags._GRAIN_UINT64_HEAP_TAG =>
-        uint64(WasmRef.toGrain(ref): Uint64),
-      _ => Doc.Builder.constantString("<unknown heap value>", 20),
+      && DataStructures.loadCycleMarker(ref) != 0n
+    ) {
+      let cycleMap = unbox(state.cycleMap)
+      let cycleIndex = match (getCycleNumber(ref, cycleMap)) {
+        -1n => {
+          use WasmI32.{ (+) }
+          let index = match (cycleMap) {
+            [] => 1n,
+            [(_, n), ..._] => untagSimpleNumber(n) + 1n,
+          }
+          state.cycleMap := [(ref, tagSimpleNumber(index)), ...cycleMap]
+          index
+        },
+        n => n,
+      }
+      return Doc.Builder.constantString("<cycle to <", 11)
+        ++ Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
+        ++ Doc.Builder.constantString(">>", 2)
+    } else if (tag == Tags._GRAIN_TUPLE_HEAP_TAG) {
+      tuple(ref, state)
+    } else if (tag == Tags._GRAIN_ARRAY_HEAP_TAG) {
+      array(WasmRef.toGrain(ref): Array<WasmRef>, state)
+    } else if (tag == Tags._GRAIN_RECORD_HEAP_TAG) {
+      _record(ref, state)
+    } else if (tag == Tags._GRAIN_ADT_HEAP_TAG) {
+      adt(ref, state)
+    } else if (tag == Tags._GRAIN_LAMBDA_HEAP_TAG) {
+      Doc.Builder.constantString("<lambda>", 8)
+    } else if (tag == Tags._GRAIN_STRING_HEAP_TAG) {
+      string(WasmRef.toGrain(ref): String, state)
+    } else if (tag == Tags._GRAIN_BYTES_HEAP_TAG) {
+      bytes(WasmRef.toGrain(ref): Bytes)
+    } else if (tag == Tags._GRAIN_BOXED_NUM_HEAP_TAG) {
+      number(WasmRef.toGrain(ref): Number)
+    } else if (tag == Tags._GRAIN_INT32_HEAP_TAG) {
+      int32(WasmRef.toGrain(ref): Int32)
+    } else if (tag == Tags._GRAIN_FLOAT32_HEAP_TAG) {
+      float32(WasmRef.toGrain(ref): Float32)
+    } else if (tag == Tags._GRAIN_UINT32_HEAP_TAG) {
+      uint32(WasmRef.toGrain(ref): Uint32)
+    } else if (tag == Tags._GRAIN_UINT64_HEAP_TAG) {
+      uint64(WasmRef.toGrain(ref): Uint64)
+    } else {
+      Doc.Builder.constantString("<unknown heap value>", 20)
     }
     let cycleIndex = getCycleNumber(ref, unbox(state.cycleMap))
     return if (cycleIndex != -1n) {
@@ -514,7 +519,7 @@ module Stringify {
         Doc.Builder.angleBrackets(
           Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
         )
-          ++ Doc.Builder.blank(1)
+          ++ Doc.Builder.space
           ++ content
       )
     } else {

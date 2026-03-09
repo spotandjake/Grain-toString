@@ -641,8 +641,6 @@ provide module Engine {
     UpdateIndent(EngineGroup, Number, Number),
   }
 
-  let none = None
-
   /**
    * Prints the given document using the provided write function.
    *
@@ -657,9 +655,9 @@ provide module Engine {
     // The current column we're writing to
     let mut column = 0
     // Queue for indentation to prevent lines with just spaces
-    let mut writeQueue = none
+    let mut writeQueue = None
     // Continuation for Fit mode calculations that depend on the size of the next node
-    let mut k = none
+    let mut fitContinuation = nextDoc => void
     // The queue of printing instructions
     let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
     let mut queue = [Print(group, doc)]
@@ -674,7 +672,7 @@ provide module Engine {
       match (writeQueue) {
         Some(queued) => {
           write(queued)
-          writeQueue = none
+          writeQueue = None
         },
         None => void,
       }
@@ -701,13 +699,8 @@ provide module Engine {
       match (queue) {
         [Print(group, doc), ...rest] => {
           queue = rest
-          match (k) {
-            Some(f) => {
-              k = none
-              f(doc)
-            },
-            None => void,
-          }
+          fitContinuation(doc)
+          fitContinuation = nextDoc => void
 
           match (doc) {
             Empty | GroupBreaker => void,
@@ -726,15 +719,12 @@ provide module Engine {
                 Flat => queue = [Print(group, doc), ...queue],
                 Breaking => breakHelp(write, eol, group),
                 FitFlat => {
-                  k = Some(
-                    nextDoc => fit(write, eol, group, flatWidth(nextDoc), width),
-                  )
+                  fitContinuation = nextDoc =>
+                    fit(write, eol, group, flatWidth(nextDoc), width)
                 },
                 FitBreaking => {
-                  k = Some(
-                    nextDoc =>
-                      fit(write, eol, group, breakingWidth(nextDoc), width),
-                  )
+                  fitContinuation = nextDoc =>
+                    fit(write, eol, group, breakingWidth(nextDoc), width)
                 },
               }
             },
