@@ -629,9 +629,7 @@ provide module Builder {
   provide let trailingComma = ifBroken(comma, empty)
 }
 
-/**
- * The printing engine for LayoutNode documents.
- */
+/** The printing engine for LayoutNode documents. */
 provide module Engine {
   enum EngineMode {
     Flat,
