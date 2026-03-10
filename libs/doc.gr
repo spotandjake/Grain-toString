@@ -328,13 +328,22 @@ provide module Builder {
   /**
    * A node that prints a constant string as-is.
    *
+   * NOTE: This should only be used for ASCII strings, as the width is
+   * calculated based on the number of bytes, which is not accurate for
+   * non-ASCII strings.
+   *
    * @param str: The ascii string to print
-   * @param width: The width of the string
    *
    * @returns A LayoutNode that prints the ascii string
    */
-  provide let constantString = (str, width) =>
-    String{ value: str, width: WithoutBreak(width) }
+  @unsafe
+  provide let asciiString = str =>
+    String{
+      value: str,
+      width: WithoutBreak(
+        tagSimpleNumber(getStringSize(WasmRef.fromGrain(str))),
+      ),
+    }
 
   /**
    * A node that prints the specified number of spaces.
@@ -528,9 +537,9 @@ provide module Builder {
   }
 
   // Constant Strings
-  let closingBracket = constantString("]", 1)
-  let doubleQuote = constantString("\"", 1)
-  let singleQuote = constantString("'", 1)
+  let closingBracket = asciiString("]")
+  let doubleQuote = asciiString("\"")
+  let singleQuote = asciiString("'")
 
   /**
    * A node that represents a space that may be broken
@@ -542,7 +551,7 @@ provide module Builder {
   /** A node that represents a space. */
   provide let space = blank(1)
   /** A node that represents a comma. */
-  provide let comma = constantString(",", 1)
+  provide let comma = asciiString(",")
   /** A node that represents a comma followed by a breakable space. */
   provide let commaBreakableSpace = comma ++ breakableSpace
   /**
@@ -554,7 +563,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in parentheses
    */
   provide let parens = (wrap=doc => group(doc), doc) =>
-    wrap(constantString("(", 1) ++ doc ++ constantString(")", 1))
+    wrap(asciiString("(") ++ doc ++ asciiString(")"))
   /**
    * Constructs a node wrapping the given document in braces.
    *
@@ -564,7 +573,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in braces
    */
   provide let braces = (wrap=doc => group(doc), doc) =>
-    wrap(constantString("{", 1) ++ doc ++ constantString("}", 1))
+    wrap(asciiString("{") ++ doc ++ asciiString("}"))
   /**
    * Constructs a node wrapping the given document in array brackets.
    *
@@ -574,7 +583,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in array brackets
    */
   provide let arrayBrackets = (wrap=doc => group(doc), doc) =>
-    wrap(constantString("[>", 2) ++ doc ++ closingBracket)
+    wrap(asciiString("[>") ++ doc ++ closingBracket)
   /**
    * Constructs a node wrapping the given document in list brackets.
    *
@@ -584,7 +593,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in list brackets
    */
   provide let listBrackets = (wrap=doc => group(doc), doc) =>
-    wrap(constantString("[", 1) ++ doc ++ closingBracket)
+    wrap(asciiString("[") ++ doc ++ closingBracket)
   /**
    * Constructs a node wrapping the given document in angle brackets.
    *
@@ -594,7 +603,7 @@ provide module Builder {
    * @returns A LayoutNode that wraps the document in angle brackets
    */
   provide let angleBrackets = (wrap=doc => group(doc), doc) =>
-    wrap(constantString("<", 1) ++ doc ++ constantString(">", 1))
+    wrap(asciiString("<") ++ doc ++ asciiString(">"))
   /**
    * Constructs a node wrapping the given document in double quotes.
    *
@@ -657,7 +666,7 @@ provide module Engine {
     // Queue for indentation to prevent lines with just spaces
     let mut writeQueue = None
     // Continuation for Fit mode calculations that depend on the size of the next node
-    let mut fitContinuation = None
+    let mut fitContinuation = nextDoc => false
     // The queue of printing instructions
     let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
     let mut queue = [Print(group, doc)]
@@ -693,15 +702,15 @@ provide module Engine {
       } else {
         queue = [Print(group, doc), ...queue]
       }
+      true
     }
 
     while (true) {
-      match ((queue, fitContinuation)) {
-        ([Print(group, doc), ...rest], Some(func)) => {
-          fitContinuation = None
-          func(doc)
+      match (queue) {
+        [Print(group, doc), ...rest] when fitContinuation(doc) => {
+          fitContinuation = nextDoc => false
         },
-        ([Print(group, doc), ...rest], None) => {
+        [Print(group, doc), ...rest] => {
           queue = rest
 
           match (doc) {
@@ -721,16 +730,12 @@ provide module Engine {
                 Flat => queue = [Print(group, doc), ...queue],
                 Breaking => breakHelp(write, eol, group),
                 FitFlat => {
-                  fitContinuation = Some(
-                    nextDoc =>
-                      fit(write, eol, group, flatWidth(nextDoc), width, doc),
-                  )
+                  fitContinuation = nextDoc =>
+                    fit(write, eol, group, flatWidth(nextDoc), width, doc)
                 },
                 FitBreaking => {
-                  fitContinuation = Some(
-                    nextDoc =>
-                      fit(write, eol, group, breakingWidth(nextDoc), width, doc),
-                  )
+                  fitContinuation = nextDoc =>
+                    fit(write, eol, group, breakingWidth(nextDoc), width, doc)
                 },
               }
             },
@@ -775,12 +780,12 @@ provide module Engine {
             },
           }
         },
-        ([UpdateIndent(group, globalIndent, localIndent), ...rest], _) => {
+        [UpdateIndent(group, globalIndent, localIndent), ...rest] => {
           queue = rest
           group.globalIndent = globalIndent
           group.localIndent = localIndent
         },
-        ([], _) => break,
+        [] => break,
       }
     }
   }

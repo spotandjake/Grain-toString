@@ -221,14 +221,12 @@ module Stringify {
       }
       let content = Doc.Builder.string(WasmRef.toGrain(strRef): String)
       if (size == 32n) {
-        content ++ Doc.Builder.constantString("...", 3)
+        content ++ Doc.Builder.asciiString("...")
       } else {
         content
       }
     }
-    Doc.Builder.angleBrackets(
-      Doc.Builder.constantString("bytes: ", 7) ++ content
-    )
+    Doc.Builder.angleBrackets(Doc.Builder.asciiString("bytes: ") ++ content)
   }
 
   /**
@@ -367,7 +365,7 @@ module Stringify {
     let denominator = DataStructures.getRationalDenominator(ref)
     let denominator = Bigint.bigIntToString(denominator, defaultRadix)
     Doc.Builder.string(numerator)
-      ++ Doc.Builder.constantString("/", 1)
+      ++ Doc.Builder.asciiString("/")
       ++ Doc.Builder.string(denominator)
   }
 
@@ -438,7 +436,7 @@ module Stringify {
       } else if (tag == Tags._GRAIN_BIGINT_BOXED_NUM_TAG) {
         bigInt(magic(val): BigInt)
       } else {
-        Doc.Builder.constantString("<unknown number>", 16)
+        Doc.Builder.asciiString("<unknown number>")
       }
     }
   }
@@ -457,7 +455,7 @@ module Stringify {
     } else if (GrainValue.isUInt16(ref)) {
       uint16(WasmRef.toGrain(ref): Uint16)
     } else {
-      Doc.Builder.constantString("<unknown short value>", 21)
+      Doc.Builder.asciiString("<unknown short value>")
     }
   }
 
@@ -465,13 +463,13 @@ module Stringify {
   @unsafe
   let constantValueToString = (ref: WasmRef) => {
     if (ref is WasmRef.fromGrain(true)) {
-      Doc.Builder.constantString("true", 4)
+      Doc.Builder.asciiString("true")
     } else if (ref is WasmRef.fromGrain(false)) {
-      Doc.Builder.constantString("false", 5)
+      Doc.Builder.asciiString("false")
     } else if (ref is WasmRef.fromGrain(void)) {
-      Doc.Builder.constantString("void", 4)
+      Doc.Builder.asciiString("void")
     } else {
-      Doc.Builder.constantString("<unknown constant value>", 24)
+      Doc.Builder.asciiString("<unknown constant value>")
     }
   }
   @unsafe
@@ -481,7 +479,7 @@ module Stringify {
     // Get The Heap Tag
     let tag = DataStructures.loadValueTag(ref)
     let content = if (untagSimpleNumber(state.maxDepth) <= 0n) {
-      Doc.Builder.constantString("<max depth reached>", 19)
+      Doc.Builder.asciiString("<max depth reached>")
     } else if (
       (
         tag == Tags._GRAIN_TUPLE_HEAP_TAG
@@ -504,9 +502,9 @@ module Stringify {
         },
         n => n,
       }
-      return Doc.Builder.constantString("<cycle to <", 11)
+      return Doc.Builder.asciiString("<cycle to <")
         ++ Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
-        ++ Doc.Builder.constantString(">>", 2)
+        ++ Doc.Builder.asciiString(">>")
     } else if (tag == Tags._GRAIN_TUPLE_HEAP_TAG) {
       tuple(ref, state)
     } else if (tag == Tags._GRAIN_ARRAY_HEAP_TAG) {
@@ -516,7 +514,7 @@ module Stringify {
     } else if (tag == Tags._GRAIN_ADT_HEAP_TAG) {
       adt(ref, state)
     } else if (tag == Tags._GRAIN_LAMBDA_HEAP_TAG) {
-      Doc.Builder.constantString("<lambda>", 8)
+      Doc.Builder.asciiString("<lambda>")
     } else if (tag == Tags._GRAIN_STRING_HEAP_TAG) {
       string(WasmRef.toGrain(ref): String, state)
     } else if (tag == Tags._GRAIN_BYTES_HEAP_TAG) {
@@ -532,7 +530,7 @@ module Stringify {
     } else if (tag == Tags._GRAIN_UINT64_HEAP_TAG) {
       uint64(WasmRef.toGrain(ref): Uint64)
     } else {
-      Doc.Builder.constantString("<unknown heap value>", 20)
+      Doc.Builder.asciiString("<unknown heap value>")
     }
     let cycleIndex = getCycleNumber(ref, unbox(state.cycleMap))
     return if (cycleIndex != -1n) {
@@ -573,7 +571,7 @@ module Stringify {
         ++ Doc.Builder._break
     )
     match (items) {
-      [> _] when !isVariant => Doc.Builder.constantString("box", 3) ++ content,
+      [> _] when !isVariant => Doc.Builder.asciiString("box") ++ content,
       _ => content,
     }
   }
@@ -708,7 +706,7 @@ module Stringify {
             let val = value(WasmRef.toGrain(ref), state)
             let entry = Doc.Builder.group(
               Doc.Builder.string(name)
-                ++ Doc.Builder.constantString(":", 1)
+                ++ Doc.Builder.asciiString(":")
                 ++ Doc.Builder.space
                 ++ val
             )
@@ -760,7 +758,7 @@ module Stringify {
     } else if (GrainValue.isConstantValue(value)) {
       constantValueToString(ref)
     } else {
-      Doc.Builder.constantString("<unknown value>", 15)
+      Doc.Builder.asciiString("<unknown value>")
     }
   }
 
