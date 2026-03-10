@@ -657,7 +657,7 @@ provide module Engine {
     // Queue for indentation to prevent lines with just spaces
     let mut writeQueue = None
     // Continuation for Fit mode calculations that depend on the size of the next node
-    let mut fitContinuation = nextDoc => void
+    let mut fitContinuation = None
     // The queue of printing instructions
     let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
     let mut queue = [Print(group, doc)]
@@ -685,7 +685,7 @@ provide module Engine {
       writeQueue = Some(buildSpaceString(group.globalIndent))
       column = group.globalIndent
     }
-    let fit = (write, eol, group, nextWidth, width) => {
+    let fit = (write, eol, group, nextWidth, width, doc) => {
       let nextWidth = widthValue(nextWidth)
       let hintWidth = widthValue(width)
       if (column + hintWidth + nextWidth > lineWidth) {
@@ -696,11 +696,13 @@ provide module Engine {
     }
 
     while (true) {
-      match (queue) {
-        [Print(group, doc), ...rest] => {
+      match ((queue, fitContinuation)) {
+        ([Print(group, doc), ...rest], Some(func)) => {
+          fitContinuation = None
+          func(doc)
+        },
+        ([Print(group, doc), ...rest], None) => {
           queue = rest
-          fitContinuation(doc)
-          fitContinuation = nextDoc => void
 
           match (doc) {
             Empty | GroupBreaker => void,
@@ -719,12 +721,16 @@ provide module Engine {
                 Flat => queue = [Print(group, doc), ...queue],
                 Breaking => breakHelp(write, eol, group),
                 FitFlat => {
-                  fitContinuation = nextDoc =>
-                    fit(write, eol, group, flatWidth(nextDoc), width)
+                  fitContinuation = Some(
+                    nextDoc =>
+                      fit(write, eol, group, flatWidth(nextDoc), width, doc),
+                  )
                 },
                 FitBreaking => {
-                  fitContinuation = nextDoc =>
-                    fit(write, eol, group, breakingWidth(nextDoc), width)
+                  fitContinuation = Some(
+                    nextDoc =>
+                      fit(write, eol, group, breakingWidth(nextDoc), width, doc),
+                  )
                 },
               }
             },
@@ -769,12 +775,12 @@ provide module Engine {
             },
           }
         },
-        [UpdateIndent(group, globalIndent, localIndent), ...rest] => {
+        ([UpdateIndent(group, globalIndent, localIndent), ...rest], _) => {
           queue = rest
           group.globalIndent = globalIndent
           group.localIndent = localIndent
         },
-        [] => break,
+        ([], _) => break,
       }
     }
   }

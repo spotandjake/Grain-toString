@@ -220,6 +220,7 @@ module HeapValues {
   assert toString("test\"") == "test\"" // Double Quote
   assert toString("test\'") == "test\'" // Single Quote
   // Bytes
+  assert toString(b"") == "<bytes: >"
   assert toString(b"test") == "<bytes: 74 65 73 74>"
   assert toString(
     b"123456789123456789123456789123456789123456789123456789123456789123456789123456789123456789123456789"

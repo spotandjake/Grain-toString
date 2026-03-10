@@ -198,30 +198,34 @@ module Stringify {
   @unsafe
   provide let bytes = (val: Bytes) => {
     use Doc.Builder.{ (++) }
-    use WasmI32.{ (+), (-), (*), (<), (>), (!=) }
+    use WasmI32.{ (+), (-), (*), (==), (<), (>), (!=) }
     let ref = WasmRef.fromGrain(val)
-    let data = getBytesArrayRef(ref)
     let size = getBytesSize(ref)
-    let size = if (size > 32n) 32n else size // Limit to 32 bytes for display
-
-    let hex = NumberUtils.get_HEX_DIGITS()
-    let strLen = size * 3n - 1n // 2 hex digits + 1 space per byte - trailing space
-    let strRef = allocateString(strLen)
-    let strData = getStringArrayRef(strRef)
-    WasmArrayRef.fillI8(strData, 0n, 0x20n, strLen) // Space before each byte except the first
-    for (let mut i = 0n; i < size; i += 1n) {
-      use WasmI32.{ (>>>) }
-      let n = WasmArrayRef.getI8U(data, i) * 2n
-      let hex = WasmI32.load16U(hex, n)
-      let strIndex = i * 3n
-      WasmArrayRef.setI8(strData, strIndex, hex)
-      WasmArrayRef.setI8(strData, strIndex + 1n, hex >>> 8n)
+    let content = if (WasmI32.eqz(size)) {
+      Doc.Builder.empty
+    } else {
+      let data = getBytesArrayRef(ref)
+      let size = if (size > 33n) 32n else size // Limit to 32 bytes for display
+      let hex = NumberUtils.get_HEX_DIGITS()
+      let strLen = size * 3n - 1n // 2 hex digits + 1 space per byte - trailing space
+      let strRef = allocateString(strLen)
+      let strData = getStringArrayRef(strRef)
+      WasmArrayRef.fillI8(strData, 0n, 0x20n, strLen) // Space before each byte except the first
+      for (let mut i = 0n; i < size; i += 1n) {
+        use WasmI32.{ (>>>) }
+        let n = WasmArrayRef.getI8U(data, i) * 2n
+        let hex = WasmI32.load16U(hex, n)
+        let strIndex = i * 3n
+        WasmArrayRef.setI8(strData, strIndex, hex)
+        WasmArrayRef.setI8(strData, strIndex + 1n, hex >>> 8n)
+      }
+      let content = Doc.Builder.string(WasmRef.toGrain(strRef): String)
+      if (size == 32n) {
+        content ++ Doc.Builder.constantString("...", 3)
+      } else {
+        content
+      }
     }
-    let content = Doc.Builder.string(WasmRef.toGrain(strRef): String)
-    let content = if (size < 32n)
-      content
-    else
-      content ++ Doc.Builder.constantString("...", 3)
     Doc.Builder.angleBrackets(
       Doc.Builder.constantString("bytes: ", 7) ++ content
     )
