@@ -707,7 +707,7 @@ provide module Engine {
 
     while (true) {
       match (queue) {
-        [Print(group, doc), ...rest] when fitContinuation(doc) => {
+        [Print(group, doc), ..._] when fitContinuation(doc) => {
           fitContinuation = nextDoc => false
         },
         [Print(group, doc), ...rest] => {

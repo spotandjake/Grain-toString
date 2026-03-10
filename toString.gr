@@ -61,6 +61,15 @@ primitive unbox = "@unbox"
 @unsafe
 let _VISITED_BIT = 0x1n
 
+/**
+ * This is the maximum depth we will traverse objects when stringifying.
+ *
+ * This exists for multiple reasons the most critical being to prevent stack overflows which happen a little bit
+ * after a `MAX_DEPTH` of 256. The reason for choosing 32 specifically is that for most data structures
+ * after a print depth of 32 the output starts to get weird and less useful.
+ */
+let _MAX_DEPTH = 32
+
 // Computes the escaped length of a usv
 @unsafe
 let computeEscapedUSVLength = (usv: WasmI32, isString: Bool) => {
@@ -206,7 +215,6 @@ module Stringify {
     } else {
       let data = getBytesArrayRef(ref)
       let size = if (size > 33n) 32n else size // Limit to 32 bytes for display
-      let hex = NumberUtils.get_HEX_DIGITS()
       let strLen = size * 3n - 1n // 2 hex digits + 1 space per byte - trailing space
       let strRef = allocateString(strLen)
       let strData = getStringArrayRef(strRef)
@@ -214,7 +222,7 @@ module Stringify {
       for (let mut i = 0n; i < size; i += 1n) {
         use WasmI32.{ (>>>) }
         let n = WasmArrayRef.getI8U(data, i) * 2n
-        let hex = WasmI32.load16U(hex, n)
+        let hex = NumberUtils.get_HEX_DIGITS(n)
         let strIndex = i * 3n
         WasmArrayRef.setI8(strData, strIndex, hex)
         WasmArrayRef.setI8(strData, strIndex + 1n, hex >>> 8n)
@@ -775,6 +783,6 @@ module Stringify {
 provide let toString = (val: a) => {
   // Note: This is a bit of hack to get around grain's lack of forall types
   let val = magic(val): b
-  let ast = Stringify.value(val, Stringify.makeState(32))
+  let ast = Stringify.value(val, Stringify.makeState(_MAX_DEPTH))
   Doc.Engine.toString(LF, 80, ast)
 }
