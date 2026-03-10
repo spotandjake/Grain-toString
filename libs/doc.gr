@@ -123,10 +123,12 @@ from "runtime/utf8" include Utf8
 use Utf8.{ isLeadingByte }
 
 from "./miniBuffer.gr" include MiniBuffer
+from "./vector.gr" include Vector
 
 // Offsets
 
 primitive (||) = "@or"
+primitive (is) = "@is"
 primitive throw = "@throw"
 
 exception Impossible(String)
@@ -660,6 +662,7 @@ provide module Engine {
    *
    * @returns Void
    */
+  @unsafe
   provide let print = (write, eol, lineWidth, doc) => {
     // The current column we're writing to
     let mut column = 0
@@ -668,8 +671,7 @@ provide module Engine {
     // Continuation for Fit mode calculations that depend on the size of the next node
     let mut fitContinuation = nextDoc => false
     // The queue of printing instructions
-    let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
-    let mut queue = [Print(group, doc)]
+    let queue = Vector.make()
 
     let eol = match (eol) {
       CRLF => "\r\n",
@@ -700,19 +702,23 @@ provide module Engine {
       if (column + hintWidth + nextWidth > lineWidth) {
         breakHelp(write, eol, group)
       } else {
-        queue = [Print(group, doc), ...queue]
+        Vector.push(queue, Print(group, doc))
       }
       true
     }
 
+    let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
+    Vector.push(queue, Print(group, doc))
     while (true) {
-      match (queue) {
-        [Print(group, doc), ..._] when fitContinuation(doc) => {
-          fitContinuation = nextDoc => false
-        },
-        [Print(group, doc), ...rest] => {
-          queue = rest
-
+      if (WasmI32.eqz(Vector.length(queue))) break
+      let next = Vector.pop(queue)
+      match (next) {
+        Print(group, doc) as instr => {
+          if (fitContinuation(doc)) {
+            fitContinuation = nextDoc => false
+            Vector.push(queue, instr)
+            continue
+          }
           match (doc) {
             Empty | GroupBreaker => void,
             String{ value, width } => {
@@ -727,7 +733,7 @@ provide module Engine {
             },
             BreakHint{ doc, flatWidth: width } => {
               match (group.mode) {
-                Flat => queue = [Print(group, doc), ...queue],
+                Flat => Vector.push(queue, Print(group, doc)),
                 Breaking => breakHelp(write, eol, group),
                 FitFlat => {
                   fitContinuation = nextDoc =>
@@ -741,20 +747,17 @@ provide module Engine {
             },
             Hardline{ _ } => breakHelp(write, eol, group),
             IfBroken{ flat, breaking, _ } => {
-              queue = [
-                Print(group, if (group.broken) breaking else flat),
-                ...queue
-              ]
+              Vector.push(
+                queue,
+                Print(group, if (group.broken) breaking else flat)
+              )
             },
             Indent{ count, doc, _ } => {
               let globalIndent = group.globalIndent
               let localIndent = group.localIndent
               group.localIndent = localIndent + count
-              queue = [
-                Print(group, doc),
-                UpdateIndent(group, globalIndent, localIndent),
-                ...queue
-              ]
+              Vector.push(queue, UpdateIndent(group, globalIndent, localIndent))
+              Vector.push(queue, Print(group, doc))
             },
             Group{ doc, groupType, flatWidth, _ } => {
               let width = widthValue(flatWidth)
@@ -773,19 +776,18 @@ provide module Engine {
                 localIndent: 0,
                 broken,
               }
-              queue = [Print(group, doc), ...queue]
+              Vector.push(queue, Print(group, doc))
             },
             Concat{ left, right, _ } => {
-              queue = [Print(group, left), Print(group, right), ...queue]
+              Vector.push(queue, Print(group, right))
+              Vector.push(queue, Print(group, left))
             },
           }
         },
-        [UpdateIndent(group, globalIndent, localIndent), ...rest] => {
-          queue = rest
+        UpdateIndent(group, globalIndent, localIndent) => {
           group.globalIndent = globalIndent
           group.localIndent = localIndent
         },
-        [] => break,
       }
     }
   }

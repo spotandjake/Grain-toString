@@ -47,16 +47,13 @@ use DataStructures.{
 }
 from "runtime/utf8" include Utf8
 use Utf8.{ usvEncodeLength, writeUtf8CodePoint }
+from "./libs/vector.gr" include Vector
 from "./libs/grainValue.gr" include GrainValue
 from "./libs/doc.gr" include Doc
 
 primitive (!) = "@not"
-primitive (&&) = "@and"
-primitive (||) = "@or"
 primitive (is) = "@is"
 primitive magic = "@magic"
-primitive box = "@box"
-primitive unbox = "@unbox"
 
 @unsafe
 let _VISITED_BIT = 0x1n
@@ -109,16 +106,6 @@ let writeEscapedUSV = (
   index
 }
 
-// Determines the cycle number of a heap value
-@unsafe
-let rec getCycleNumber = (value: WasmRef, cycleMap: List<(WasmRef, Number)>) => {
-  match (cycleMap) {
-    [] => -1n,
-    [(head, num), ..._] when head is value => untagSimpleNumber(num),
-    [_, ...tail] => getCycleNumber(value, tail),
-  }
-}
-
 /**
  * A container for the stringification logic.
  *
@@ -138,7 +125,7 @@ module Stringify {
     /** Indicates if we are currently stringifying the top-level value. */
     topLevel: Bool,
     /** A map of heap values to their cycle numbers. */
-    cycleMap: Box<List<(WasmRef, Number)>>,
+    cycleMap: Vector.Vector<WasmRef>,
   }
   /**
    * Creates an initial empty stringification state.
@@ -146,7 +133,7 @@ module Stringify {
    * @returns An empty stringification state
    */
   provide let makeState = maxDepth =>
-    { maxDepth, topLevel: true, cycleMap: box([]) }
+    { maxDepth, topLevel: true, cycleMap: Vector.make() }
 
   /**
    * Generates the next stringification state for nested values, decrementing the max depth.
@@ -157,6 +144,42 @@ module Stringify {
       ...state,
       maxDepth: tagSimpleNumber(untagSimpleNumber(state.maxDepth) - 1n),
       topLevel: false,
+    }
+  }
+
+  // Helpers for printing cycles
+  @unsafe
+  let reportCycle = (ref, cycleVector) => {
+    use Doc.Builder.{ (++) }
+    use WasmI32.{ (==), (+) }
+    let mut cycleIndex = Vector.findIndex(cycleVector, ref)
+    if (cycleIndex == -1n) {
+      cycleIndex = Vector.length(cycleVector)
+      Vector.push(cycleVector, ref)
+    }
+    let numStr = NumberUtils.itoa32(cycleIndex + 1n, defaultRadix)
+    Doc.Builder.angleBrackets(
+      Doc.Builder.asciiString("cycle to ")
+        ++ Doc.Builder.angleBrackets(Doc.Builder.asciiString(numStr))
+    )
+  }
+  @unsafe
+  let cyclePrefix = (ref, cycleVector, content) => {
+    use Doc.Builder.{ (++) }
+    use WasmI32.{ (+), (!=) }
+    let cycleIndex = Vector.findIndex(cycleVector, ref)
+    if (cycleIndex != -1n) {
+      Doc.Builder.group(
+        Doc.Builder.angleBrackets(
+          Doc.Builder.asciiString(
+            NumberUtils.itoa32(cycleIndex + 1n, defaultRadix)
+          )
+        )
+          ++ Doc.Builder.space
+          ++ content
+      )
+    } else {
+      content
     }
   }
 
@@ -246,7 +269,7 @@ module Stringify {
    */
   @unsafe
   provide let int8 = (val: Int8) =>
-    Doc.Builder.string(NumberUtils.itoa32(untagInt8(val), defaultRadix))
+    Doc.Builder.asciiString(NumberUtils.itoa32(untagInt8(val), defaultRadix))
   /**
    * Converts an Int16 value to its string representation.
    *
@@ -256,7 +279,7 @@ module Stringify {
    */
   @unsafe
   provide let int16 = (val: Int16) =>
-    Doc.Builder.string(NumberUtils.itoa32(untagInt16(val), defaultRadix))
+    Doc.Builder.asciiString(NumberUtils.itoa32(untagInt16(val), defaultRadix))
 
   /**
    * Converts an Int32 value to its string representation.
@@ -268,7 +291,7 @@ module Stringify {
   @unsafe
   provide let int32 = (val: Int32) => {
     let num = Conv.fromInt32(val)
-    Doc.Builder.string(NumberUtils.itoa32(num, defaultRadix))
+    Doc.Builder.asciiString(NumberUtils.itoa32(num, defaultRadix))
   }
 
   /**
@@ -281,7 +304,7 @@ module Stringify {
   @unsafe
   provide let int64 = (val: Int64) => {
     let num = Conv.fromInt64(magic(val): Int64)
-    Doc.Builder.string(NumberUtils.itoa64(num, defaultRadix))
+    Doc.Builder.asciiString(NumberUtils.itoa64(num, defaultRadix))
   }
 
   /**
@@ -293,7 +316,7 @@ module Stringify {
    */
   @unsafe
   provide let uint8 = (val: Uint8) =>
-    Doc.Builder.string(NumberUtils.itoa32(untagUint8(val), defaultRadix))
+    Doc.Builder.asciiString(NumberUtils.itoa32(untagUint8(val), defaultRadix))
   /**
    * Converts a Uint16 value to its string representation.
    *
@@ -303,7 +326,7 @@ module Stringify {
    */
   @unsafe
   provide let uint16 = (val: Uint16) =>
-    Doc.Builder.string(NumberUtils.itoa32(untagUint16(val), defaultRadix))
+    Doc.Builder.asciiString(NumberUtils.itoa32(untagUint16(val), defaultRadix))
 
   /**
    * Converts a Uint32 value to its string representation.
@@ -315,7 +338,7 @@ module Stringify {
   @unsafe
   provide let uint32 = (val: Uint32) => {
     let num = Conv.fromUint32(val)
-    Doc.Builder.string(NumberUtils.utoa32(num, defaultRadix))
+    Doc.Builder.asciiString(NumberUtils.utoa32(num, defaultRadix))
   }
   /**
    * Converts a Uint64 value to its string representation.
@@ -327,7 +350,7 @@ module Stringify {
   @unsafe
   provide let uint64 = (val: Uint64) => {
     let num = Conv.fromUint64(val)
-    Doc.Builder.string(NumberUtils.utoa64(num, defaultRadix))
+    Doc.Builder.asciiString(NumberUtils.utoa64(num, defaultRadix))
   }
 
   /**
@@ -341,7 +364,7 @@ module Stringify {
   provide let float32 = (val: Float32) => {
     let num = Conv.fromFloat32(val)
     let num = WasmF64.promoteF32(num)
-    Doc.Builder.string(NumberUtils.dtoa(num))
+    Doc.Builder.asciiString(NumberUtils.dtoa(num))
   }
 
   /**
@@ -354,7 +377,7 @@ module Stringify {
   @unsafe
   provide let float64 = (val: Float64) => {
     let num = Conv.fromFloat64(val)
-    Doc.Builder.string(NumberUtils.dtoa(num))
+    Doc.Builder.asciiString(NumberUtils.dtoa(num))
   }
 
   /**
@@ -372,9 +395,9 @@ module Stringify {
     let numerator = Bigint.bigIntToString(numerator, defaultRadix)
     let denominator = DataStructures.getRationalDenominator(ref)
     let denominator = Bigint.bigIntToString(denominator, defaultRadix)
-    Doc.Builder.string(numerator)
+    Doc.Builder.asciiString(numerator)
       ++ Doc.Builder.asciiString("/")
-      ++ Doc.Builder.string(denominator)
+      ++ Doc.Builder.asciiString(denominator)
   }
 
   /**
@@ -388,7 +411,7 @@ module Stringify {
   provide let bigInt = (val: BigInt) => {
     let ref = WasmRef.fromGrain(val)
     let str = Bigint.bigIntToString(ref, defaultRadix)
-    Doc.Builder.string(str)
+    Doc.Builder.asciiString(str)
   }
 
   /**
@@ -428,7 +451,7 @@ module Stringify {
   @unsafe
   provide let number = (val: Number) => {
     if (GrainValue.isSimpleNumberValue(val)) {
-      Doc.Builder.string(
+      Doc.Builder.asciiString(
         NumberUtils.itoa32(untagSimpleNumber(val), defaultRadix)
       )
     } else {
@@ -463,7 +486,7 @@ module Stringify {
     } else if (GrainValue.isUInt16(ref)) {
       uint16(WasmRef.toGrain(ref): Uint16)
     } else {
-      Doc.Builder.asciiString("<unknown short value>")
+      Doc.Builder.asciiString("<unknown value>")
     }
   }
 
@@ -477,42 +500,16 @@ module Stringify {
     } else if (ref is WasmRef.fromGrain(void)) {
       Doc.Builder.asciiString("void")
     } else {
-      Doc.Builder.asciiString("<unknown constant value>")
+      Doc.Builder.asciiString("<unknown value>")
     }
   }
   @unsafe
   let rec heapValueToString = (ref: WasmRef, state) => {
-    use Doc.Builder.{ (++) }
-    use WasmI32.{ (==), (!=), (<=) }
+    use WasmI32.{ (==), (<=) }
     // Get The Heap Tag
     let tag = DataStructures.loadValueTag(ref)
-    let content = if (untagSimpleNumber(state.maxDepth) <= 0n) {
+    if (untagSimpleNumber(state.maxDepth) <= 0n) {
       Doc.Builder.asciiString("<max depth reached>")
-    } else if (
-      (
-        tag == Tags._GRAIN_TUPLE_HEAP_TAG
-        || tag == Tags._GRAIN_ARRAY_HEAP_TAG
-        || tag == Tags._GRAIN_RECORD_HEAP_TAG
-        || tag == Tags._GRAIN_ADT_HEAP_TAG
-      )
-      && DataStructures.loadCycleMarker(ref) != 0n
-    ) {
-      let cycleMap = unbox(state.cycleMap)
-      let cycleIndex = match (getCycleNumber(ref, cycleMap)) {
-        -1n => {
-          use WasmI32.{ (+) }
-          let index = match (cycleMap) {
-            [] => 1n,
-            [(_, n), ..._] => untagSimpleNumber(n) + 1n,
-          }
-          state.cycleMap := [(ref, tagSimpleNumber(index)), ...cycleMap]
-          index
-        },
-        n => n,
-      }
-      return Doc.Builder.asciiString("<cycle to <")
-        ++ Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
-        ++ Doc.Builder.asciiString(">>")
     } else if (tag == Tags._GRAIN_TUPLE_HEAP_TAG) {
       tuple(ref, state)
     } else if (tag == Tags._GRAIN_ARRAY_HEAP_TAG) {
@@ -538,19 +535,7 @@ module Stringify {
     } else if (tag == Tags._GRAIN_UINT64_HEAP_TAG) {
       uint64(WasmRef.toGrain(ref): Uint64)
     } else {
-      Doc.Builder.asciiString("<unknown heap value>")
-    }
-    let cycleIndex = getCycleNumber(ref, unbox(state.cycleMap))
-    return if (cycleIndex != -1n) {
-      Doc.Builder.group(
-        Doc.Builder.angleBrackets(
-          Doc.Builder.string(NumberUtils.itoa32(cycleIndex, defaultRadix))
-        )
-          ++ Doc.Builder.space
-          ++ content
-      )
-    } else {
-      content
+      Doc.Builder.asciiString("<unknown value>")
     }
   }
   and iterableItemHelp = (val: a, final: Bool, state) => {
@@ -592,11 +577,16 @@ module Stringify {
    * @returns A document layout representing the stringified tuple value
    */
   and tuple = (ref: WasmRef, state) => {
-    DataStructures.storeCycleMarker(ref, _VISITED_BIT)
-    let data = GrainValue.getTupleData(ref)
-    let content = tupleHelp(data, false, state)
-    DataStructures.storeCycleMarker(ref, 0n)
-    content
+    use WasmI32.{ (!=) }
+    if (DataStructures.loadCycleMarker(ref) != 0n) {
+      reportCycle(ref, state.cycleMap)
+    } else {
+      DataStructures.storeCycleMarker(ref, _VISITED_BIT)
+      let data = GrainValue.getTupleData(ref)
+      let content = tupleHelp(data, false, state)
+      DataStructures.storeCycleMarker(ref, 0n)
+      cyclePrefix(ref, state.cycleMap, content)
+    }
   }
   /**
    * Converts an array value to its string representation.
@@ -607,25 +597,30 @@ module Stringify {
    * @returns A document layout representing the stringified array value
    */
   and array = (val: Array<a>, state) => {
-    use Doc.Builder.{ (++) }
-    let state = nextState(state)
+    use WasmI32.{ (!=) }
     let ref = WasmRef.fromGrain(val)
-    DataStructures.storeCycleMarker(ref, _VISITED_BIT)
-    let content = Doc.Builder.arrayBrackets(
-      Doc.Builder.indent(
-        Doc.Builder.concatArrayMap(
-          lead=next => Doc.Builder._break,
-          sep=(prev, next) => Doc.Builder.breakableSpace,
-          trail=prev => Doc.Builder.empty,
-          func=(final, item) =>
-            iterableItemHelp(WasmRef.toGrain(item), final, state),
-          magic(val): Array<WasmRef>
+    if (DataStructures.loadCycleMarker(ref) != 0n) {
+      reportCycle(ref, state.cycleMap)
+    } else {
+      use Doc.Builder.{ (++) }
+      let state = nextState(state)
+      DataStructures.storeCycleMarker(ref, _VISITED_BIT)
+      let content = Doc.Builder.arrayBrackets(
+        Doc.Builder.indent(
+          Doc.Builder.concatArrayMap(
+            lead=next => Doc.Builder._break,
+            sep=(prev, next) => Doc.Builder.breakableSpace,
+            trail=prev => Doc.Builder.empty,
+            func=(final, item) =>
+              iterableItemHelp(WasmRef.toGrain(item), final, state),
+            magic(val): Array<WasmRef>
+          )
         )
+          ++ Doc.Builder._break
       )
-        ++ Doc.Builder._break
-    )
-    DataStructures.storeCycleMarker(ref, 0n)
-    content
+      DataStructures.storeCycleMarker(ref, 0n)
+      cyclePrefix(ref, state.cycleMap, content)
+    }
   }
   /**
    * Converts a list value to its string representation.
@@ -661,45 +656,53 @@ module Stringify {
    * @returns A document layout representing the stringified ADT value
    */
   and adt = (ref: WasmRef, state) => {
-    use Doc.Builder.{ (++) }
-    use WasmI32.{ (-), (>=) }
-    DataStructures.storeCycleMarker(ref, _VISITED_BIT)
-    let content = if (GrainValue.isListVariant(ref)) {
-      list(WasmRef.toGrain(ref), state)
+    use WasmI32.{ (-), (!=), (>=) }
+    if (DataStructures.loadCycleMarker(ref) != 0n) {
+      reportCycle(ref, state.cycleMap)
     } else {
-      let (name, fields) = GrainValue.TypeMetaData.getVariantMetaData(ref)
-      let fields = getCompoundValueArrayRef(WasmRef.fromGrain(fields))
-      let data = getCompoundValueArrayRef(ref)
-      let arity = WasmArrayRef.length(data)
-      let valuesRef = allocateArray(arity, WasmRef.fromGrain(void))
-      let valuesData = getCompoundValueArrayRef(valuesRef)
-      let namePortion = Doc.Builder.string(name)
-      // Get Variant Data
-      if (WasmI32.eqz(arity)) {
-        namePortion
-      } else if (WasmI32.eqz(WasmArrayRef.length(fields))) {
-        WasmArrayRef.copyAny(valuesData, 0n, data, 0n, arity)
-        namePortion
-          ++ tupleHelp(WasmRef.toGrain(valuesRef): Array<WasmRef>, true, state)
+      use Doc.Builder.{ (++) }
+      DataStructures.storeCycleMarker(ref, _VISITED_BIT)
+      let content = if (GrainValue.isListVariant(ref)) {
+        list(WasmRef.toGrain(ref), state)
       } else {
-        for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
-          WasmArrayRef.setAny(
-            valuesData,
-            i,
-            WasmRef.fromGrain(
-              (WasmArrayRef.getAny(fields, i), WasmArrayRef.getAny(data, i))
+        let (name, fields) = GrainValue.TypeMetaData.getVariantMetaData(ref)
+        let fields = getCompoundValueArrayRef(WasmRef.fromGrain(fields))
+        let data = getCompoundValueArrayRef(ref)
+        let arity = WasmArrayRef.length(data)
+        let valuesRef = allocateArray(arity, WasmRef.fromGrain(void))
+        let valuesData = getCompoundValueArrayRef(valuesRef)
+        let namePortion = Doc.Builder.string(name)
+        // Get Variant Data
+        if (WasmI32.eqz(arity)) {
+          namePortion
+        } else if (WasmI32.eqz(WasmArrayRef.length(fields))) {
+          WasmArrayRef.copyAny(valuesData, 0n, data, 0n, arity)
+          namePortion
+            ++ tupleHelp(
+              WasmRef.toGrain(valuesRef): Array<WasmRef>,
+              true,
+              state
             )
-          )
+        } else {
+          for (let mut i = arity - 1n; i >= 0n; i -= 1n) {
+            WasmArrayRef.setAny(
+              valuesData,
+              i,
+              WasmRef.fromGrain(
+                (WasmArrayRef.getAny(fields, i), WasmArrayRef.getAny(data, i))
+              )
+            )
+          }
+          namePortion
+            ++ _recordHelp(
+              WasmRef.toGrain(valuesRef): Array<(String, WasmRef)>,
+              state
+            )
         }
-        namePortion
-          ++ _recordHelp(
-            WasmRef.toGrain(valuesRef): Array<(String, WasmRef)>,
-            state
-          )
       }
+      DataStructures.storeCycleMarker(ref, 0n)
+      cyclePrefix(ref, state.cycleMap, content)
     }
-    DataStructures.storeCycleMarker(ref, 0n)
-    content
   }
   and _recordHelp = (entries: Array<(String, WasmRef)>, state) => {
     use Doc.Builder.{ (++) }
@@ -742,10 +745,15 @@ module Stringify {
    * @returns A document layout representing the stringified record value
    */
   and _record = (ref: WasmRef, state) => {
-    DataStructures.storeCycleMarker(ref, _VISITED_BIT)
-    let content = _recordHelp(GrainValue.getRecordData(ref), state)
-    DataStructures.storeCycleMarker(ref, 0n)
-    content
+    use WasmI32.{ (!=) }
+    if (DataStructures.loadCycleMarker(ref) != 0n) {
+      reportCycle(ref, state.cycleMap)
+    } else {
+      DataStructures.storeCycleMarker(ref, _VISITED_BIT)
+      let content = _recordHelp(GrainValue.getRecordData(ref), state)
+      DataStructures.storeCycleMarker(ref, 0n)
+      cyclePrefix(ref, state.cycleMap, content)
+    }
   }
   /**
    * Converts a Grain value to its string representation.
