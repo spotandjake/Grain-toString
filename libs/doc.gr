@@ -128,8 +128,11 @@ from "./vector.gr" include Vector
 // Offsets
 
 primitive (||) = "@or"
+primitive (!) = "@not"
 primitive (is) = "@is"
 primitive throw = "@throw"
+primitive box = "@box"
+primitive unbox = "@unbox"
 
 exception Impossible(String)
 
@@ -186,7 +189,7 @@ provide enum EOL {
 abstract enum rec LayoutNode {
   Empty,
   GroupBreaker,
-  String{ value: String, width: Width },
+  String{ value: String, width: Width, rawWidth: Number },
   Blank{ count: Number, },
   BreakHint{ doc: LayoutNode, flatWidth: Width },
   Hardline{ phantom: Bool, },
@@ -209,6 +212,7 @@ abstract enum rec LayoutNode {
     flatWidth: Width,
     breakingWidth: Width,
   },
+  // TODO: Consider adding a repeat or ConcatList node to avoid allocating as many doc nodes for large chains of concatenations
   Concat{
     left: LayoutNode,
     right: LayoutNode,
@@ -325,8 +329,10 @@ provide module Builder {
    *
    * @returns A LayoutNode that prints the string
    */
-  provide let string = str =>
-    String{ value: str, width: WithoutBreak(stringLength(str)) }
+  provide let string = str => {
+    let strLen = stringLength(str)
+    String{ value: str, width: WithoutBreak(strLen), rawWidth: strLen }
+  }
   /**
    * A node that prints a constant string as-is.
    *
@@ -339,13 +345,10 @@ provide module Builder {
    * @returns A LayoutNode that prints the ascii string
    */
   @unsafe
-  provide let asciiString = str =>
-    String{
-      value: str,
-      width: WithoutBreak(
-        tagSimpleNumber(getStringSize(WasmRef.fromGrain(str))),
-      ),
-    }
+  provide let asciiString = str => {
+    let strLen = tagSimpleNumber(getStringSize(WasmRef.fromGrain(str)))
+    String{ value: str, width: WithoutBreak(strLen), rawWidth: strLen }
+  }
 
   /**
    * A node that prints the specified number of spaces.
@@ -644,10 +647,28 @@ provide module Engine {
     mut localIndent: Number,
     mut broken: Bool,
   }
+  @unsafe
+  let defaultFitContinuation = nextDoc => 0n
 
-  enum PrintInstruction {
-    Print(EngineGroup, LayoutNode),
-    UpdateIndent(EngineGroup, Number, Number),
+  @unsafe
+  let flushWriteQueue = (write, writeQueue) => {
+    let str = unbox(writeQueue)
+    let strRef = WasmRef.fromGrain(str)
+    let strSize = getStringSize(strRef)
+    if (!WasmI32.eqz(strSize)) {
+      write(str)
+      writeQueue := ""
+    }
+  }
+
+  @unsafe
+  let breakHelp = (write, writeQueue, eol, group) => {
+    group.broken = true
+    group.globalIndent += group.localIndent
+    group.localIndent = 0
+    write(eol)
+    writeQueue := buildSpaceString(group.globalIndent)
+    group.globalIndent
   }
 
   /**
@@ -662,131 +683,103 @@ provide module Engine {
    */
   @unsafe
   provide let print = (write, eol, lineWidth, doc) => {
-    // The current column we're writing to
-    let mut column = 0
-    // Queue for indentation to prevent lines with just spaces
-    let mut writeQueue = None
-    // Continuation for Fit mode calculations that depend on the size of the next node
-    let mut fitContinuation = nextDoc => false
-    // The queue of printing instructions
-    let queue = Vector.make()
-
     let eol = match (eol) {
       CRLF => "\r\n",
       LF => "\n",
     }
+    // The current column we're writing to
+    let mut column = 0
+    // Queue for indentation to prevent lines with just spaces
+    let writeQueue = box("")
+    // Continuation for Fit mode calculations that depend on the size of the next node
+    let mut fitContinuation = defaultFitContinuation
+    // The queue of printing instructions
+    let queue = Vector.make()
 
     // Helpers
-    let flushWriteQueue = () => {
-      match (writeQueue) {
-        Some(queued) => {
-          write(queued)
-          writeQueue = None
-        },
-        None => void,
-      }
-    }
-    let breakHelp = (write, eol, group) => {
-      group.broken = true
-      group.globalIndent += group.localIndent
-      group.localIndent = 0
-      write(eol)
-      writeQueue = Some(buildSpaceString(group.globalIndent))
-      column = group.globalIndent
-    }
     let fit = (write, eol, group, nextWidth, width, doc) => {
       let nextWidth = widthValue(nextWidth)
       let hintWidth = widthValue(width)
       if (column + hintWidth + nextWidth > lineWidth) {
-        breakHelp(write, eol, group)
+        column = breakHelp(write, writeQueue, eol, group)
       } else {
-        Vector.push(queue, Print(group, doc))
+        Vector.push(queue, (group, doc))
       }
-      true
+      1n
     }
 
-    let group = { mode: Flat, globalIndent: 0, localIndent: 0, broken: false }
-    Vector.push(queue, Print(group, doc))
+    let mut current = (
+      { mode: Flat, globalIndent: 0, localIndent: 0, broken: false },
+      doc,
+    )
     while (true) {
-      if (WasmI32.eqz(Vector.length(queue))) break
-      let next = Vector.pop(queue)
-      match (next) {
-        Print(group, doc) as instr => {
-          if (fitContinuation(doc)) {
-            fitContinuation = nextDoc => false
-            Vector.push(queue, instr)
-            continue
-          }
-          match (doc) {
-            Empty | GroupBreaker => void,
-            String{ value, width } => {
-              flushWriteQueue()
-              write(value)
-              column += widthValue(width)
+      let (group, doc) = current
+      if (!(fitContinuation is defaultFitContinuation)) {
+        fitContinuation(doc)
+        fitContinuation = defaultFitContinuation
+        continue
+      }
+      match (doc) {
+        Empty | GroupBreaker => void,
+        String{ value, width, rawWidth } => {
+          flushWriteQueue(write, writeQueue)
+          write(value)
+          column += rawWidth
+        },
+        Blank{ count } => {
+          flushWriteQueue(write, writeQueue)
+          write(buildSpaceString(count))
+          column += count
+        },
+        BreakHint{ doc, flatWidth: width } => {
+          match (group.mode) {
+            Flat => {
+              current = (group, doc)
+              continue
             },
-            Blank{ count } => {
-              flushWriteQueue()
-              write(buildSpaceString(count))
-              column += count
+            Breaking => column = breakHelp(write, writeQueue, eol, group),
+            FitFlat => {
+              fitContinuation = nextDoc =>
+                fit(write, eol, group, flatWidth(nextDoc), width, doc)
             },
-            BreakHint{ doc, flatWidth: width } => {
-              match (group.mode) {
-                Flat => Vector.push(queue, Print(group, doc)),
-                Breaking => breakHelp(write, eol, group),
-                FitFlat => {
-                  fitContinuation = nextDoc =>
-                    fit(write, eol, group, flatWidth(nextDoc), width, doc)
-                },
-                FitBreaking => {
-                  fitContinuation = nextDoc =>
-                    fit(write, eol, group, breakingWidth(nextDoc), width, doc)
-                },
-              }
-            },
-            Hardline{ _ } => breakHelp(write, eol, group),
-            IfBroken{ flat, breaking, _ } => {
-              Vector.push(
-                queue,
-                Print(group, if (group.broken) breaking else flat)
-              )
-            },
-            Indent{ count, doc, _ } => {
-              let globalIndent = group.globalIndent
-              let localIndent = group.localIndent
-              group.localIndent = localIndent + count
-              Vector.push(queue, UpdateIndent(group, globalIndent, localIndent))
-              Vector.push(queue, Print(group, doc))
-            },
-            Group{ doc, groupType, flatWidth, _ } => {
-              let width = widthValue(flatWidth)
-              let broken = hasGroupBreaker(doc)
-              let mode = match (groupType) {
-                _ when broken => Breaking,
-                Auto when column + width > lineWidth => Breaking,
-                Auto => Flat,
-                FitGroups => FitFlat,
-                FitAll => FitBreaking,
-              }
-
-              let group = {
-                mode,
-                globalIndent: group.globalIndent,
-                localIndent: 0,
-                broken,
-              }
-              Vector.push(queue, Print(group, doc))
-            },
-            Concat{ left, right, _ } => {
-              Vector.push(queue, Print(group, right))
-              Vector.push(queue, Print(group, left))
+            FitBreaking => {
+              fitContinuation = nextDoc =>
+                fit(write, eol, group, breakingWidth(nextDoc), width, doc)
             },
           }
         },
-        UpdateIndent(group, globalIndent, localIndent) => {
-          group.globalIndent = globalIndent
-          group.localIndent = localIndent
+        Hardline{ _ } => column = breakHelp(write, writeQueue, eol, group),
+        IfBroken{ flat, breaking, _ } => {
+          current = (group, if (group.broken) breaking else flat)
+          continue
+        },
+        Indent{ count, doc, _ } => {
+          current = ({ ...group, localIndent: group.localIndent + count }, doc)
+          continue
+        },
+        Group{ doc, groupType, flatWidth, _ } => {
+          let broken = hasGroupBreaker(doc)
+          let mode = match (groupType) {
+            _ when broken => Breaking,
+            Auto when column + widthValue(flatWidth) > lineWidth => Breaking,
+            Auto => Flat,
+            FitGroups => FitFlat,
+            FitAll => FitBreaking,
+          }
+          current = (
+            { mode, globalIndent: group.globalIndent, localIndent: 0, broken },
+            doc,
+          )
+          continue
+        },
+        Concat{ left, right, _ } => {
+          Vector.push(queue, (group, right))
+          current = (group, left)
+          continue
         },
       }
+      if (WasmI32.eqz(Vector.length(queue))) break
+      current = Vector.pop(queue)
     }
   }
 
