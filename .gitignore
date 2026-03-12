@@ -2,6 +2,8 @@
 *.gro
 *.wasm
 *.wat
+*.mashtree
+*.modsig
 
 # Nix
 .direnv/

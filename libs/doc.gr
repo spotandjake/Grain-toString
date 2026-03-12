@@ -130,6 +130,7 @@ from "./vector.gr" include Vector
 primitive (||) = "@or"
 primitive (!) = "@not"
 primitive (is) = "@is"
+primitive magic = "@magic"
 primitive throw = "@throw"
 primitive box = "@box"
 primitive unbox = "@unbox"
@@ -406,7 +407,7 @@ provide module Builder {
    *  group(indent(2, string("foo") ++ break ++ string("bar")))
    * ))
    * if the break hint is broken by the engine, `bar`'s indentation level will
-   * only be two spaces, as the outer group could never be broken be broken by
+   * only be two spaces, as the outer group could never be broken by
    * the engine.
    *
    * @param count: The number of spaces to indent by (default: 2)
@@ -647,8 +648,15 @@ provide module Engine {
     mut localIndent: Number,
     mut broken: Bool,
   }
+  /*
+   * NOTE:
+   * This is an extremely unsafe optimization instead of using `None` or a closure for the fit continuation,
+   * we cast a void value to a function and check if that value is the default to determine if we need to
+   * call the continuation, this saves us a lot of performance and some size, but if defaultFitContinuation
+   * were to ever be called in it's default state it would cause a crash.
+   */
   @unsafe
-  let defaultFitContinuation = nextDoc => 0n
+  let defaultFitContinuation = magic(void): LayoutNode => WasmI32
 
   @unsafe
   let flushWriteQueue = (write, writeQueue) => {

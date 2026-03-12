@@ -49,22 +49,6 @@ let _RESULT_ID = untagSimpleNumber(builtinId("Result"))
 let _RANGE_ID = untagSimpleNumber(builtinId("Range"))
 
 /**
- * Checks if the given grain value is a simple number.
- *
- * @param val: The grain value to check
- *
- * @returns `true` if the grain value is a simple number, `false` otherwise
- */
-@unsafe
-provide let isSimpleNumberValue = val => {
-  use WasmI32.{ (==), (&) }
-  let ref = WasmRef.fromGrain(val)
-  WasmRef.isRefI31(ref)
-    && (WasmRef.i31GetU(ref) & Tags._GRAIN_NUMBER_TAG_MASK)
-      == Tags._GRAIN_NUMBER_TAG_TYPE
-}
-
-/**
  * Checks if the given grain value is a heap value.
  *
  * @param val: The grain value to check
@@ -78,7 +62,44 @@ provide let isHeapValue = val => {
 }
 
 /**
+ * Checks if the given grain value is a stack value.
+ *
+ * @param val: The grain value to check
+ *
+ * @returns `true` if the grain value is a stack value, `false` otherwise
+ */
+provide let isStackValue = val => {
+  let ref = WasmRef.fromGrain(val)
+  WasmRef.isRefI31(ref)
+}
+
+/**
+ * Checks if the given grain value is a simple number.
+ *
+ * NOTE:
+ * This throws a wasm trap if the value is a not a (ref i31),
+ * isStackValue should be used to check for (ref i31) values
+ * before calling this function.
+ *
+ * @param val: The grain value to check
+ *
+ * @returns `true` if the grain value is a simple number, `false` otherwise
+ */
+@unsafe
+provide let isSimpleNumberValue = val => {
+  use WasmI32.{ (==), (&) }
+  let ref = WasmRef.fromGrain(val)
+  (WasmRef.i31GetU(ref) & Tags._GRAIN_NUMBER_TAG_MASK)
+    == Tags._GRAIN_NUMBER_TAG_TYPE
+}
+
+/**
  * Checks if the given grain value is a constant value.
+ *
+ * NOTE:
+ * This throws a wasm trap if the value is a not a (ref i31),
+ * isStackValue should be used to check for (ref i31) values
+ * before calling this function.
  *
  * @param val: The grain value to check
  *
@@ -88,13 +109,17 @@ provide let isHeapValue = val => {
 provide let isConstantValue = val => {
   use WasmI32.{ (==), (&) }
   let ref = WasmRef.fromGrain(val)
-  WasmRef.isRefI31(ref)
-    && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_TAG_MASK)
-      == Tags._GRAIN_CONST_TAG_TYPE
+  (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_TAG_MASK)
+    == Tags._GRAIN_CONST_TAG_TYPE
 }
 
 /**
  * Checks if the given grain value is a short value.
+ *
+ * NOTE:
+ * This throws a wasm trap if the value is a not a (ref i31),
+ * isStackValue should be used to check for (ref i31) values
+ * before calling this function.
  *
  * @param val: The grain value to check
  *
@@ -104,9 +129,8 @@ provide let isConstantValue = val => {
 provide let isShortValue = val => {
   use WasmI32.{ (==), (&) }
   let ref = WasmRef.fromGrain(val)
-  WasmRef.isRefI31(ref)
-    && (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_TAG_MASK)
-      == Tags._GRAIN_SHORTVAL_TAG_TYPE
+  (WasmRef.i31GetU(ref) & Tags._GRAIN_GENERIC_TAG_MASK)
+    == Tags._GRAIN_SHORTVAL_TAG_TYPE
 }
 
 /**

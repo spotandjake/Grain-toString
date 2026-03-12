@@ -1,3 +1,13 @@
+/*
+ * Copyright (c) 2025 Jake Follest
+ * Licensed under the MIT License.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to use, copy,
+ * modify, merge, publish, distribute, sublicense, and/or sell copies, subject to the MIT License.
+ */
+
+/** A low level tiny buffer for building strings efficiently. */
 @noPervasives
 module MiniBuffer
 
@@ -16,10 +26,18 @@ use DataStructures.{
   untagSimpleNumber,
 }
 
+/** A tiny string buffer. */
 abstract record MiniBuffer {
   mut data: Bytes,
   mut pos: Number,
 }
+
+/**
+ * Constructs a new MiniBuffer with the given initial size.
+ *
+ * @param size: The initial size of the buffer in bytes.
+ * @returns A new MiniBuffer instance with the specified initial size.
+ */
 @unsafe
 provide let make = (size: WasmI32) =>
   { data: WasmRef.toGrain(allocateBytes(size)): Bytes, pos: 0 }
@@ -41,6 +59,12 @@ let autogrow = (buffer: MiniBuffer, addedSize: WasmI32) => {
   return
 }
 
+/**
+ * Appends the given string to the MiniBuffer, automatically growing the buffer if necessary.
+ *
+ * @param str: The string to append to the buffer.
+ * @param buffer: The MiniBuffer to which the string will be appended.
+ */
 @unsafe
 provide let addString = (str: String, buffer: MiniBuffer) => {
   use WasmI32.{ (+) }
@@ -55,6 +79,14 @@ provide let addString = (str: String, buffer: MiniBuffer) => {
   WasmArrayRef.copyI8(bufferData, bufferPosition, strData, 0n, strSize)
   buffer.pos = tagSimpleNumber(bufferPosition + strSize)
 }
+
+/**
+ * Converts the contents of the MiniBuffer to a String.
+ *
+ * @param buffer: The MiniBuffer whose contents will be converted to a String.
+ *
+ * @returns The content of the MiniBuffer as a String.
+ */
 @unsafe
 provide let toString = (buffer: MiniBuffer) => {
   let srcRef = WasmRef.fromGrain(buffer.data)

@@ -13,26 +13,6 @@ Note:
 
 Functions and constants included in the GrainValue module.
 
-### GrainValue.**isSimpleNumberValue**
-
-```grain
-isSimpleNumberValue: (val: a) => Bool
-```
-
-Checks if the given grain value is a simple number.
-
-Parameters:
-
-| param | type | description              |
-| ----- | ---- | ------------------------ |
-| `val` | `a`  | The grain value to check |
-
-Returns:
-
-| type   | description                                                     |
-| ------ | --------------------------------------------------------------- |
-| `Bool` | `true` if the grain value is a simple number, `false` otherwise |
-
 ### GrainValue.**isHeapValue**
 
 ```grain
@@ -53,6 +33,51 @@ Returns:
 | ------ | ------------------------------------------------------------ |
 | `Bool` | `true` if the grain value is a heap value, `false` otherwise |
 
+### GrainValue.**isStackValue**
+
+```grain
+isStackValue: (val: a) => Bool
+```
+
+Checks if the given grain value is a stack value.
+
+Parameters:
+
+| param | type | description              |
+| ----- | ---- | ------------------------ |
+| `val` | `a`  | The grain value to check |
+
+Returns:
+
+| type   | description                                                   |
+| ------ | ------------------------------------------------------------- |
+| `Bool` | `true` if the grain value is a stack value, `false` otherwise |
+
+### GrainValue.**isSimpleNumberValue**
+
+```grain
+isSimpleNumberValue: (val: a) => Bool
+```
+
+Checks if the given grain value is a simple number.
+
+NOTE:
+This throws a wasm trap if the value is a not a (ref i31),
+isStackValue should be used to check for (ref i31) values
+before calling this function.
+
+Parameters:
+
+| param | type | description              |
+| ----- | ---- | ------------------------ |
+| `val` | `a`  | The grain value to check |
+
+Returns:
+
+| type   | description                                                     |
+| ------ | --------------------------------------------------------------- |
+| `Bool` | `true` if the grain value is a simple number, `false` otherwise |
+
 ### GrainValue.**isConstantValue**
 
 ```grain
@@ -60,6 +85,11 @@ isConstantValue: (val: a) => Bool
 ```
 
 Checks if the given grain value is a constant value.
+
+NOTE:
+This throws a wasm trap if the value is a not a (ref i31),
+isStackValue should be used to check for (ref i31) values
+before calling this function.
 
 Parameters:
 
@@ -80,6 +110,11 @@ isShortValue: (val: a) => Bool
 ```
 
 Checks if the given grain value is a short value.
+
+NOTE:
+This throws a wasm trap if the value is a not a (ref i31),
+isStackValue should be used to check for (ref i31) values
+before calling this function.
 
 Parameters:
 

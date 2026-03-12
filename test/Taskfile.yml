@@ -24,3 +24,5 @@ tasks:
       - rm -f *.gro
       - rm -f *.wasm
       - rm -f *.wat
+      - rm -f *.mashtree
+      - rm -f *.modsig

@@ -52,6 +52,7 @@ from "./libs/grainValue.gr" include GrainValue
 from "./libs/doc.gr" include Doc
 
 primitive (!) = "@not"
+primitive (&&) = "@and"
 primitive (is) = "@is"
 primitive magic = "@magic"
 
@@ -450,7 +451,7 @@ module Stringify {
    */
   @unsafe
   provide let number = (val: Number) => {
-    if (GrainValue.isSimpleNumberValue(val)) {
+    if (GrainValue.isStackValue(val) && GrainValue.isSimpleNumberValue(val)) {
       Doc.Builder.asciiString(
         NumberUtils.itoa32(untagSimpleNumber(val), defaultRadix)
       )
@@ -765,14 +766,18 @@ module Stringify {
    */
   and value = (value: a, state) => {
     let ref = WasmRef.fromGrain(value)
-    if (GrainValue.isSimpleNumberValue(value)) {
-      number(magic(value): Number)
+    if (GrainValue.isStackValue(value)) {
+      if (GrainValue.isSimpleNumberValue(value)) {
+        number(magic(value): Number)
+      } else if (GrainValue.isShortValue(ref)) {
+        shortValueToString(ref, state)
+      } else if (GrainValue.isConstantValue(ref)) {
+        constantValueToString(ref)
+      } else {
+        Doc.Builder.asciiString("<unknown value>")
+      }
     } else if (GrainValue.isHeapValue(value)) {
       heapValueToString(ref, state)
-    } else if (GrainValue.isShortValue(value)) {
-      shortValueToString(ref, state)
-    } else if (GrainValue.isConstantValue(value)) {
-      constantValueToString(ref)
     } else {
       Doc.Builder.asciiString("<unknown value>")
     }
