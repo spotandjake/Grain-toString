@@ -1,0 +1,102 @@
+module Demo
+
+from "list" include List
+from "./toString.gr" include ToString
+
+use ToString.{ toString }
+
+// DataTypes
+record DemoSmall {
+  a: Number,
+  b: Number,
+  c: Number,
+  d: Number,
+  e: Number,
+  f: Number,
+  g: Number,
+  h: Number,
+  i: Number,
+  j: Number,
+  k: Number,
+  l: Number,
+}
+record DemoLarge {
+  a: Number,
+  b: Number,
+  c: Number,
+  d: Number,
+  e: Number,
+  f: Number,
+  g: Number,
+  h: Number,
+  i: Number,
+  j: Number,
+  k: Number,
+  l: Number,
+  m: Number,
+}
+// Construct demo data
+let small = {
+  a: 1,
+  b: 2,
+  c: 3,
+  d: 4,
+  e: 5,
+  f: 6,
+  g: 7,
+  h: 8,
+  i: 9,
+  j: 10,
+  k: 11,
+  l: 12,
+}
+let large = {
+  a: 1,
+  b: 2,
+  c: 3,
+  d: 4,
+  e: 5,
+  f: 6,
+  g: 7,
+  h: 8,
+  i: 9,
+  j: 10,
+  k: 11,
+  l: 12,
+  m: 13,
+}
+let lst = List.init(
+  10,
+  i =>
+    {
+      a: 1,
+      b: 2,
+      c: 3,
+      d: 4,
+      e: 5,
+      f: 6,
+      g: 7,
+      h: 8,
+      i: 9,
+      j: 10,
+      k: 11,
+      l: 12,
+    }
+)
+
+// Emit demo data
+print("Pervasives.toString")
+print("Small")
+print(small)
+print("Large")
+print(large)
+print("List")
+print(lst)
+print("\n\n\n\n\n\n")
+print("Library.toString")
+print("Small")
+print(toString(small))
+print("Large")
+print(toString(large))
+print("List")
+print(toString(lst))

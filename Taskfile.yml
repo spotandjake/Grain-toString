@@ -39,3 +39,6 @@ tasks:
       - rm -f *.modsig
       - task libs:clean
       - task test:clean
+  demo:
+    cmds:
+      - grain demo.gr

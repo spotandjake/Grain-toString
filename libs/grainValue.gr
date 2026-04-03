@@ -68,6 +68,7 @@ provide let isHeapValue = val => {
  *
  * @returns `true` if the grain value is a stack value, `false` otherwise
  */
+@unsafe
 provide let isStackValue = val => {
   let ref = WasmRef.fromGrain(val)
   WasmRef.isRefI31(ref)
